@@ -1,0 +1,25 @@
+# Local development MongoDB. Not a production configuration: no authentication,
+# bound to localhost only.
+#
+#   docker compose -f infrastructure/docker-compose.yml up -d
+#   docker compose -f infrastructure/docker-compose.yml down
+#
+# Data survives restarts in the named volume; `down -v` deletes it.
+
+services:
+  mongodb:
+    image: mongo:8
+    container_name: professor-for-a-day-mongodb
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:27017:27017"
+    volumes:
+      - mongodb-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  mongodb-data:

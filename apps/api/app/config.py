@@ -22,8 +22,14 @@ class Settings(BaseSettings):
     port: int = 8787
     web_origin: str = "http://localhost:5173"
 
+    mongodb_uri: str = "mongodb://localhost:27017"
+    mongodb_database: str = "professor_for_a_day"
+    mongodb_timeout_ms: int = Field(default=5_000, gt=0)
+
     llm_temperature: float = Field(default=0.2, ge=0.0, le=2.0)
     llm_timeout_seconds: float = Field(default=60.0, gt=0.0)
+
+    log_level: str = "INFO"
 
 
 @lru_cache

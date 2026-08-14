@@ -25,9 +25,21 @@ class ChatResponse(BaseModel):
     model: str
 
 
+class CreateConversationRequest(BaseModel):
+    title: str | None = Field(default=None, max_length=200)
+
+
+class AppendMessagesRequest(BaseModel):
+    messages: list[ChatMessage] = Field(min_length=1, max_length=100)
+
+
 class HealthResponse(BaseModel):
+    """`ok` reports the process; `database` is separate so a Mongo outage is visible
+    without making the whole endpoint fail."""
+
     ok: bool
     model: str
+    database: Literal["up", "down"]
 
 
 class ErrorResponse(BaseModel):

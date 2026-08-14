@@ -17,6 +17,7 @@ Professor-for-a-Day/
 │   ├── shared/              # 前后端共享类型、接口契约、常量
 │   └── config/              # 共享工程配置
 ├── infrastructure/
+│   ├── docker-compose.yml   # 本地开发用 MongoDB
 │   └── scripts/             # 本地开发、检查和部署辅助脚本
 ├── docs/                    # 架构、决策和产品说明
 ├── .env.example             # 环境变量名称示例，不放真实密钥
@@ -40,18 +41,23 @@ apps/api/
 ├── pyproject.toml           # 依赖与工具配置（FastAPI、LangChain、pytest、ruff）
 ├── .env.example             # 后端环境变量清单，复制为 .env 后填入真实密钥
 ├── app/
-│   ├── main.py              # FastAPI 应用入口、CORS、路由注册
+│   ├── main.py              # FastAPI 入口、CORS、lifespan（Mongo 连接）、路由注册
 │   ├── config.py            # 环境变量配置，密钥只从环境读取
+│   ├── db.py                # MongoDB 客户端生命周期
+│   ├── dependencies.py      # FastAPI 依赖（注入 repository）
 │   ├── schemas.py           # 面向前端的请求/响应契约（Pydantic）
+│   ├── models.py            # 持久化文档模型（与 schemas 分离）
 │   ├── routes/              # 面向前端的 API 路由
-│   │   ├── health.py        # GET /health
-│   │   └── chat.py          # POST /api/chat
+│   │   ├── health.py        # GET /health（含数据库状态）
+│   │   ├── chat.py          # POST /api/chat
+│   │   └── conversations.py # /api/conversations 的增删查
 │   ├── services/            # LLM、对话、课程和评估等应用服务
 │   │   └── llm.py           # LangChain provider（DeutschlandGPT）
+│   ├── repositories/        # MongoDB 数据访问抽象
+│   │   └── conversations.py # conversations 集合
 │   ├── agent/               # Agent 编排与运行循环（占位）
-│   ├── repositories/        # MongoDB 数据访问抽象（占位）
 │   └── tools/               # 可被 Agent 调用的受控工具（占位）
-└── tests/                   # pytest（路由层用假的 LLM 服务，不打真实 API）
+└── tests/                   # pytest（路由层用假实现；repository 打真实 Mongo，缺库则跳过）
 ```
 
 `services/llm.py` 是唯一知道模型提供方的模块：DeutschlandGPT 提供
@@ -59,6 +65,20 @@ OpenAI 兼容的 `/chat/completions`，因此用 LangChain 的 `ChatOpenAI` 覆�
 `base_url` 接入。路由层只依赖 LangChain Runnable，日后换提供方不需要改路由。
 
 `build_chat_chain()` 是后续加入 Prompt 模板、检索、Tool Calling 和记忆的接缝。
+
+### MongoDB 数据层
+
+`db.py` 在应用 lifespan 中创建唯一的 `AsyncMongoClient`（pymongo 原生异步驱动，
+Motor 已弃用），挂在 `app.state` 上；路由通过 `dependencies.py` 拿到 repository，
+不接触 driver。URI 可能含密码，因此日志里只出现数据库名，不出现 URI。
+
+`repositories/conversations.py` 是唯一知道文档结构的模块：消息内嵌在会话文档中
+（一次读取即拿到整段会话），并对 `updated_at` 建降序索引供“最近会话”列表使用。
+若单个会话超过 16MB 文档上限，可在不改动 repository 接口的前提下把消息拆到独立集合。
+
+**Mongo 在开发期是可选的**：连不上时应用照常启动，`/health` 返回
+`"database": "down"`，`/api/conversations` 返回 503，而 `/api/chat` 不受影响。
+本地启动：`docker compose -f infrastructure/docker-compose.yml up -d`。
 
 ### `packages/shared`
 
@@ -97,19 +117,21 @@ web ────────► shared
 ## 后续实现顺序
 
 1. ~~初始化后端最小启动入口，并把 DeutschlandGPT 抽象为 LLM provider。~~（已完成）
-2. 确定 monorepo 工具和前端包管理器。
-3. 初始化前端最小启动入口。
-4. 定义共享 API 类型和错误格式（后端契约已在 `app/schemas.py`）。
-5. 接入 MongoDB 的连接层与数据模型（`repositories/`，异步驱动）。
-6. 增加流式响应（`/api/chat/stream`，基于 LangChain `astream`）。
-7. 实现最小 Agent Loop，再增加 Tool Calling、记忆和多 Agent 编排。
-8. 最后扩展教学场景和用户界面。
+2. ~~接入 MongoDB 的连接层与 conversations 数据模型。~~（已完成）
+3. 把 `/api/chat` 的一问一答写入会话（可选 `conversation_id`），让对话有记忆。
+4. 确定 monorepo 工具和前端包管理器。
+5. 初始化前端最小启动入口。
+6. 定义共享 API 类型和错误格式（后端契约已在 `app/schemas.py`）。
+7. 增加流式响应（`/api/chat/stream`，基于 LangChain `astream`）。
+8. 实现最小 Agent Loop，再增加 Tool Calling、记忆和多 Agent 编排。
+9. 最后扩展教学场景和用户界面。
 
 ## 当前明确不实现的内容
 
 - 页面和交互功能
-- 用户登录
-- MongoDB schema 和连接代码
+- 用户登录（`conversations` 目前没有 owner 字段）
+- 会话与聊天的打通：`/api/chat` 仍是无状态单轮，不写库
+- 生产环境的 Mongo 认证、副本集和迁移策略
 - Agent 级别的模型编排
 - Agent Loop、Tool Calling 和多 Agent 逻辑
 - CI/CD、容器和生产部署配置
