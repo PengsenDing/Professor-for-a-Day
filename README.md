@@ -2,26 +2,32 @@
 
 ## Project status
 
-The first server-side DeutschlandGPT integration is now available in `apps/api`.
-The API key is read only from an environment variable and is never sent to the
+The backend in `apps/api` is a Python scaffold: FastAPI for the HTTP boundary,
+LangChain for the LLM layer, DeutschlandGPT as the current model provider. The
+API key is read only from an environment variable and is never sent to the
 browser.
 
-## Run the DeutschlandGPT API locally
+## Run the API locally
 
-Requirements: Node.js 20.6 or newer.
+Requirements: Python 3.11 or newer (verified on 3.14; the system `python3` on
+macOS is 3.9 and will not work).
 
 ```bash
 cd apps/api
-npm install
-cp ../../.env.example .env
+python3.14 -m venv .venv
+source .venv/bin/activate
+pip install -e '.[dev]'
+cp .env.example .env
 ```
 
 Open `apps/api/.env` and replace `replace-with-your-api-key` with your real
 DeutschlandGPT API key. Then start the API:
 
 ```bash
-npm run dev
+uvicorn app.main:app --reload --port 8787
 ```
+
+Interactive API docs are served at http://localhost:8787/docs.
 
 Check the health endpoint:
 
@@ -37,14 +43,22 @@ curl http://localhost:8787/api/chat \
   -d '{"messages":[{"role":"user","content":"请用一句话介绍德国。"}]}'
 ```
 
-The backend forwards the request to DeutschlandGPT's OpenAI-compatible
-`/chat/completions` endpoint. The model can be changed with `DEUTSCHLANDGPT_MODEL`
-or per request with a `model` field.
+The response is normalised to `{"reply": "...", "model": "..."}` instead of the
+raw provider payload. Under the hood LangChain's `ChatOpenAI` talks to
+DeutschlandGPT's OpenAI-compatible `/chat/completions` endpoint, so the provider
+can be swapped without touching the routes. The model can be changed with
+`DEUTSCHLANDGPT_MODEL` or per request with a `model` field.
+
+Run the tests and linter:
+
+```bash
+pytest && ruff check .
+```
 
 ## Planned architecture
 
 - `apps/web` — React + Tailwind frontend
-- `apps/api` — TypeScript backend/API boundary
+- `apps/api` — Python (FastAPI + LangChain) backend/API boundary
 - `packages/shared` — shared types and contracts between frontend and backend
 - `packages/config` — shared, non-secret configuration and tooling settings
 - `infrastructure` — local development and deployment-related assets

@@ -3,7 +3,8 @@
 ## 目标
 
 先建立清晰的项目边界，为教学 Agent、用户交互、持久化和 LLM 接入提供稳定基础。
-当前已实现 DeutschlandGPT 的服务端代理入口，业务功能仍将逐步加入。
+当前后端为 Python 脚手架：FastAPI 负责 HTTP 边界，LangChain 负责 LLM 接入，
+DeutschlandGPT 是当前的模型提供方。业务功能仍将逐步加入。
 
 ## 目录结构
 
@@ -11,7 +12,7 @@
 Professor-for-a-Day/
 ├── apps/
 │   ├── web/                 # React + Tailwind 前端应用
-│   └── api/                 # TypeScript 后端/API 应用
+│   └── api/                 # Python 后端/API 应用（FastAPI + LangChain）
 ├── packages/
 │   ├── shared/              # 前后端共享类型、接口契约、常量
 │   └── config/              # 共享工程配置
@@ -32,17 +33,32 @@ Professor-for-a-Day/
 
 ### `apps/api`
 
-负责 HTTP API、身份与请求边界、参数校验，以及协调领域服务。后续可以在这里
-逐步加入：
+负责 HTTP API、身份与请求边界、参数校验，以及协调领域服务。当前目录：
 
-- `agent/`：Agent 编排与运行循环
-- `services/`：LLM、对话、课程和评估等应用服务
-- `repositories/`：MongoDB 数据访问抽象
-- `tools/`：可被 Agent 调用的受控工具
-- `routes/`：面向前端的 API 路由
+```text
+apps/api/
+├── pyproject.toml           # 依赖与工具配置（FastAPI、LangChain、pytest、ruff）
+├── .env.example             # 后端环境变量清单，复制为 .env 后填入真实密钥
+├── app/
+│   ├── main.py              # FastAPI 应用入口、CORS、路由注册
+│   ├── config.py            # 环境变量配置，密钥只从环境读取
+│   ├── schemas.py           # 面向前端的请求/响应契约（Pydantic）
+│   ├── routes/              # 面向前端的 API 路由
+│   │   ├── health.py        # GET /health
+│   │   └── chat.py          # POST /api/chat
+│   ├── services/            # LLM、对话、课程和评估等应用服务
+│   │   └── llm.py           # LangChain provider（DeutschlandGPT）
+│   ├── agent/               # Agent 编排与运行循环（占位）
+│   ├── repositories/        # MongoDB 数据访问抽象（占位）
+│   └── tools/               # 可被 Agent 调用的受控工具（占位）
+└── tests/                   # pytest（路由层用假的 LLM 服务，不打真实 API）
+```
 
-目前 `apps/api/src/server.ts` 提供最小 HTTP 边界：`GET /health` 和 `POST /api/chat`。
-后续可按业务需要拆分为 routes、services 和 agent 目录。
+`services/llm.py` 是唯一知道模型提供方的模块：DeutschlandGPT 提供
+OpenAI 兼容的 `/chat/completions`，因此用 LangChain 的 `ChatOpenAI` 覆盖
+`base_url` 接入。路由层只依赖 LangChain Runnable，日后换提供方不需要改路由。
+
+`build_chat_chain()` 是后续加入 Prompt 模板、检索、Tool Calling 和记忆的接缝。
 
 ### `packages/shared`
 
@@ -51,8 +67,8 @@ API 请求/响应结构。这里不应放数据库连接、密钥或浏览器专
 
 ### `packages/config`
 
-集中放置 TypeScript、Lint、格式化和测试等共享配置，减少多个应用之间的配置
-漂移。真正开始选定工具链后再补充具体配置文件。
+集中放置前端 TypeScript、Lint、格式化和测试等共享配置，减少多个应用之间的配置
+漂移。后端的依赖和工具配置放在 `apps/api/pyproject.toml`。
 
 ### `infrastructure`
 
@@ -80,13 +96,14 @@ web ────────► shared
 
 ## 后续实现顺序
 
-1. 确定 monorepo 工具和包管理器。
-2. 初始化前端和后端的最小启动入口。
-3. 定义共享 API 类型和错误格式。
-4. 接入 MongoDB 的连接层与数据模型。
-5. 将当前 DeutschlandGPT 代理抽象为 LLM provider。
-6. 实现最小 Agent Loop，再增加 Tool Calling、记忆和多 Agent 编排。
-7. 最后扩展教学场景和用户界面。
+1. ~~初始化后端最小启动入口，并把 DeutschlandGPT 抽象为 LLM provider。~~（已完成）
+2. 确定 monorepo 工具和前端包管理器。
+3. 初始化前端最小启动入口。
+4. 定义共享 API 类型和错误格式（后端契约已在 `app/schemas.py`）。
+5. 接入 MongoDB 的连接层与数据模型（`repositories/`，异步驱动）。
+6. 增加流式响应（`/api/chat/stream`，基于 LangChain `astream`）。
+7. 实现最小 Agent Loop，再增加 Tool Calling、记忆和多 Agent 编排。
+8. 最后扩展教学场景和用户界面。
 
 ## 当前明确不实现的内容
 
