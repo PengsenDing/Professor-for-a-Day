@@ -1,0 +1,382 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+  --font-heading: var(--font-geist-sans);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+:root {
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.205 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.708 0 0);
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  --radius: 0.625rem;
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
+}
+
+.dark {
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.922 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.556 0 0);
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  --sidebar: oklch(0.205 0 0);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.556 0 0);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+  }
+}
+/* ---------------------------------------------------------------------------
+   Student avatar (components/student-avatar.tsx)
+   All motion is scoped under .sa and keyed off data-state. Add a new state by
+   adding [data-state="..."] rules — the component JSX stays untouched. */
+
+@keyframes sa-bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
+@keyframes sa-blink {
+  0%, 94%, 100% { transform: scaleY(1); }
+  96.5% { transform: scaleY(0.12); }
+}
+@keyframes sa-nod {
+  0%, 100% { transform: rotate(0deg); }
+  40% { transform: rotate(3.5deg); }
+  70% { transform: rotate(1deg); }
+}
+@keyframes sa-nod-slow {
+  0%, 100% { transform: rotate(0deg); }
+  50% { transform: rotate(-2.5deg); }
+}
+@keyframes sa-talk {
+  from { transform: scaleY(0.35); }
+  to { transform: scaleY(1); }
+}
+@keyframes sa-gesture {
+  from { transform: rotate(-4deg); }
+  to { transform: rotate(14deg); }
+}
+@keyframes sa-hop {
+  0%, 100% { transform: translateY(0); }
+  40% { transform: translateY(-9px); }
+  70% { transform: translateY(-2px); }
+}
+@keyframes sa-dot {
+  0%, 100% { opacity: 0.25; }
+  50% { opacity: 1; }
+}
+@keyframes sa-pop {
+  0% { transform: scale(0); opacity: 0; }
+  60% { transform: scale(1.25); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.sa * { transform-box: fill-box; }
+.sa .sa-root { animation: sa-bob 3.6s ease-in-out infinite; }
+.sa .sa-lean,
+.sa .sa-head,
+.sa .sa-pupils,
+.sa .sa-brow-l,
+.sa .sa-brow-r { transition: transform 0.45s ease; }
+.sa .sa-head { transform-origin: 50% 88%; }
+.sa .sa-arm { transform-origin: 10% 20%; }
+.sa .sa-eyes {
+  transform-origin: center;
+  animation: sa-blink 4.8s ease-in-out infinite;
+}
+.sa .sa-mouth > * {
+  opacity: 0;
+  transform-origin: center;
+  transition: opacity 0.25s ease;
+}
+.sa .sa-thought,
+.sa .sa-sparks {
+  opacity: 0;
+  transform: scale(0.5);
+  transform-origin: center;
+  transition: opacity 0.3s ease, transform 0.35s ease;
+}
+
+/* Idle: gentle bob + soft smile (blinking runs in every state). */
+.sa[data-state="idle"] .sa-mouth-smile { opacity: 1; }
+
+/* Listening: lean toward the composer, nod, brows up, eyes on the user. */
+.sa[data-state="listening"] .sa-mouth-smile { opacity: 1; }
+.sa[data-state="listening"] .sa-lean { transform: translateY(2px) rotate(-2deg); }
+.sa[data-state="listening"] .sa-head { animation: sa-nod 2s ease-in-out infinite; }
+.sa[data-state="listening"] .sa-brow-l,
+.sa[data-state="listening"] .sa-brow-r { transform: translateY(-1.5px); }
+.sa[data-state="listening"] .sa-pupils { transform: translate(0, 2px); }
+
+/* Thinking: head tilt, eyes up, "..." thought bubble. */
+.sa[data-state="thinking"] .sa-mouth-o { opacity: 1; }
+.sa[data-state="thinking"] .sa-head { transform: rotate(5deg); }
+.sa[data-state="thinking"] .sa-pupils { transform: translate(-3px, -2.5px); }
+.sa[data-state="thinking"] .sa-thought { opacity: 1; transform: scale(1); }
+.sa[data-state="thinking"] .sa-dot1 { animation: sa-dot 1.2s infinite; }
+.sa[data-state="thinking"] .sa-dot2 { animation: sa-dot 1.2s 0.2s infinite; }
+.sa[data-state="thinking"] .sa-dot3 { animation: sa-dot 1.2s 0.4s infinite; }
+
+/* Speaking: mouth moves, slow nods, explaining hand gesture. */
+.sa[data-state="speaking"] .sa-mouth-open {
+  opacity: 1;
+  animation: sa-talk 0.3s ease-in-out infinite alternate;
+}
+.sa[data-state="speaking"] .sa-head { animation: sa-nod-slow 2.4s ease-in-out infinite; }
+.sa[data-state="speaking"] .sa-arm { animation: sa-gesture 1s ease-in-out infinite alternate; }
+
+/* Happy: grin, double hop, sparkles pop in. */
+.sa[data-state="happy"] .sa-mouth-grin { opacity: 1; }
+.sa[data-state="happy"] .sa-lean { animation: sa-hop 0.6s ease-out 2; }
+.sa[data-state="happy"] .sa-brow-l,
+.sa[data-state="happy"] .sa-brow-r { transform: translateY(-2px); }
+.sa[data-state="happy"] .sa-sparks { opacity: 1; transform: scale(1); }
+.sa[data-state="happy"] .sa-sparks > * { animation: sa-pop 0.5s ease-out both; }
+.sa[data-state="happy"] .sa-sparks > :nth-child(2) { animation-delay: 0.12s; }
+.sa[data-state="happy"] .sa-sparks > :nth-child(3) { animation-delay: 0.24s; }
+
+/* Confused (errors): head tilt the other way, raised brow, wavy mouth. */
+.sa[data-state="confused"] .sa-mouth-wavy { opacity: 1; }
+.sa[data-state="confused"] .sa-head { transform: rotate(-6deg); }
+.sa[data-state="confused"] .sa-brow-l { transform: translateY(-2.5px) rotate(-8deg); }
+.sa[data-state="confused"] .sa-pupils { transform: translate(2.5px, -1.5px); }
+
+@media (prefers-reduced-motion: reduce) {
+  .sa .sa-root,
+  .sa .sa-eyes,
+  .sa .sa-head,
+  .sa .sa-arm,
+  .sa .sa-lean,
+  .sa .sa-mouth-open,
+  .sa .sa-dot1, .sa .sa-dot2, .sa .sa-dot3,
+  .sa .sa-sparks > * { animation: none !important; }
+  .sa * { transition-duration: 0.01ms !important; }
+}
+
+/* ---------------------------------------------------------------------------
+   Student picker avatar (components/student-picker-avatar.tsx)
+   Scoped under .spa, keyed off :hover, :focus-visible and data-selected.
+   The portrait is one raster image, so hover "waving" is a 2.5D gesture:
+   scale + glow on the circle, a gentle rock-and-bounce on the figure, and a
+   greeting bubble — no warping of the character itself. */
+
+@keyframes spa-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+/* One cheerful ~1.8s greeting rock; replays on each hover entry. */
+@keyframes spa-greet {
+  0% { transform: rotate(0deg) translateY(0); }
+  18% { transform: rotate(-3.5deg) translateY(-3px); }
+  40% { transform: rotate(3.5deg) translateY(-5px); }
+  60% { transform: rotate(-2.5deg) translateY(-2px); }
+  80% { transform: rotate(2deg) translateY(-1px); }
+  100% { transform: rotate(0deg) translateY(0); }
+}
+@keyframes spa-bubble-in {
+  0% { opacity: 0; transform: translate(-50%, 8px) scale(0.6); }
+  60% { opacity: 1; transform: translate(-50%, 0) scale(1.08); }
+  100% { opacity: 1; transform: translate(-50%, 0) scale(1); }
+}
+@keyframes spa-confirm {
+  0% { transform: scale(1); }
+  45% { transform: scale(1.07); }
+  100% { transform: scale(1); }
+}
+@keyframes spa-badge-pop {
+  0% { transform: scale(0); opacity: 0; }
+  60% { transform: scale(1.25); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+/* Waving arm rig (Lottie-style paper doll, see WavingArm in the component):
+   the arm swings up ~112° around the shoulder pivot in the first third,
+   wobbles twice near the top, then settles back down — timing and angles
+   lifted from the reference "say hi" Lottie (24fps: up by f8, wobbles at
+   f11–f19), with a return added so hover ends back at rest. */
+@keyframes spa-hello-arm {
+  0% { transform: rotate(0deg); }
+  20% { transform: rotate(-114deg); }
+  34% { transform: rotate(-102deg); }
+  48% { transform: rotate(-114deg); }
+  62% { transform: rotate(-102deg); }
+  74% { transform: rotate(-112deg); }
+  100% { transform: rotate(0deg); }
+}
+/* Body secondary motion from the same Lottie: -6°→0 tilt with a small
+   bounce while the arm rises. */
+@keyframes spa-hello-body {
+  0% { transform: rotate(0deg) translateY(0); }
+  20% { transform: rotate(-5deg) translateY(-3px); }
+  45% { transform: rotate(-3deg) translateY(-1px); }
+  70% { transform: rotate(-4deg) translateY(-2px); }
+  100% { transform: rotate(0deg) translateY(0); }
+}
+
+.spa .spa-circle {
+  transition: transform 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease;
+}
+.spa .spa-figure { animation: spa-float 4.5s ease-in-out infinite; }
+.spa .spa-bubble {
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, 8px) scale(0.6);
+}
+
+.spa:hover .spa-circle,
+.spa:focus-visible .spa-circle {
+  transform: scale(1.05);
+  box-shadow:
+    0 0 0 4px color-mix(in oklab, var(--ring) 30%, transparent),
+    0 10px 32px -8px color-mix(in oklab, var(--ring) 55%, transparent);
+}
+.spa:hover .spa-figure:not([data-layered]),
+.spa:focus-visible .spa-figure:not([data-layered]) {
+  animation: spa-greet 1.8s ease-in-out;
+  transform-origin: 50% 90%;
+}
+/* Layered figures wave the arm instead of rocking the whole image. */
+.spa:hover .spa-figure[data-layered],
+.spa:focus-visible .spa-figure[data-layered] {
+  animation: spa-float 4.5s ease-in-out infinite, spa-hello-body 1.8s ease-in-out;
+  transform-origin: 50% 95%;
+}
+.spa:hover .spa-arm,
+.spa:focus-visible .spa-arm {
+  animation: spa-hello-arm 1.8s ease-in-out;
+}
+.spa:hover .spa-bubble,
+.spa:focus-visible .spa-bubble {
+  animation: spa-bubble-in 0.35s ease-out forwards;
+}
+
+/* Selection: stronger glow + confirmation pulse; badge pops in. */
+.spa[data-selected] .spa-circle {
+  animation: spa-confirm 0.35s ease-out;
+  box-shadow:
+    0 0 0 4px color-mix(in oklab, var(--primary) 35%, transparent),
+    0 10px 36px -8px color-mix(in oklab, var(--primary) 60%, transparent);
+}
+.spa .spa-badge { animation: spa-badge-pop 0.35s ease-out both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .spa .spa-figure,
+  .spa:hover .spa-figure,
+  .spa:focus-visible .spa-figure,
+  .spa .spa-arm,
+  .spa:hover .spa-arm,
+  .spa:focus-visible .spa-arm,
+  .spa[data-selected] .spa-circle,
+  .spa .spa-badge { animation: none !important; }
+  .spa:hover .spa-circle,
+  .spa:focus-visible .spa-circle { transform: none; }
+  /* Bubble still appears, just without motion. */
+  .spa:hover .spa-bubble,
+  .spa:focus-visible .spa-bubble {
+    animation: none !important;
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+  }
+}
