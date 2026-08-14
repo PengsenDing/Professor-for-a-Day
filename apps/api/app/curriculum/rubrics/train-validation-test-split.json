@@ -1,0 +1,46 @@
+{
+  "concept_id": "train-validation-test-split",
+  "points": [
+    {
+      "id": "tvt-1",
+      "label": "Three sets, three roles",
+      "description": "The learner names the three splits and their distinct roles: the training set fits the model's parameters, the validation set is used during development to compare models and tune hyperparameters, and the test set is held back for one final, unbiased estimate of real-world performance."
+    },
+    {
+      "id": "tvt-2",
+      "label": "Why held-out data is needed",
+      "description": "The learner explains the reason for splitting at all: evaluating on the same data the model trained on rewards memorization, so an honest estimate of generalization requires data the model has never seen."
+    },
+    {
+      "id": "tvt-3",
+      "label": "Keep the test set untouched",
+      "description": "The learner states that repeatedly using the test set to guide decisions leaks information and inflates the estimate — tuning belongs on the validation set, and the test set should be consulted only once (or rarely) at the end."
+    }
+  ],
+  "misconceptions": [
+    {
+      "id": "tvt-mc-1",
+      "summary": "Validation and test sets are the same thing — you just need one pile of held-out data for everything.",
+      "correction": "The learner explains why the roles must be separate: because the validation set drives many tuning decisions, the model becomes indirectly fitted to it, so its scores drift optimistic; a separate untouched test set is needed for a final unbiased measurement."
+    },
+    {
+      "id": "tvt-mc-2",
+      "summary": "It's fine to tweak the model repeatedly based on test-set results until the test score is high.",
+      "correction": "The learner clarifies that selecting changes by test performance is a form of overfitting to the test set: after many peeks the reported score no longer predicts real-world performance, which defeats the test set's entire purpose."
+    }
+  ],
+  "probes": {
+    "beginner": [
+      "Why can't I just train on all my data and also evaluate on it? More data for training sounds strictly better.",
+      "How big should each of the three parts be? Is it always some fixed percentage?"
+    ],
+    "confident": [
+      "I check my test score after every tweak and keep the changes that raise it — that's exactly what the test set is for.",
+      "Validation set, test set — same thing. Two names for one held-out chunk of data."
+    ],
+    "skeptic": [
+      "A random split puts yesterday's data in train and today's in test from the same distribution. Real deployment faces future, shifted data — so isn't even the test score too optimistic?",
+      "With a small dataset, a single split seems like a lottery: a lucky test set flatters the model. How is one split trustworthy at all?"
+    ]
+  }
+}

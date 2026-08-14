@@ -65,8 +65,9 @@ OpenAPI document, the OpenAPI document wins. §3.5 lists the criteria this super
 | `POST` | `/api/speech/transcriptions` | Audio → transcript; touches nothing else |
 
 There is **no** `GET /api/sessions/{session_id}`: a mid-session browser refresh loses the
-session by design. Existing `/health`, `/api/chat`, and `/api/conversations` remain
-unchanged but are outside the product contract.
+session by design. `/health` remains as specified in the OpenAPI document. The pre-contract
+`/api/chat` and `/api/conversations` routes have been removed from the codebase; nothing in
+this document applies to them.
 
 ### 3.2 Enumerations
 
@@ -369,8 +370,7 @@ Superseded by the frozen contract (read them through the OpenAPI document):
 
 ### K. Persistence — `AC-PER`
 
-- **AC-PER-1** — Teaching Sessions are stored in a dedicated MongoDB collection, distinct from
-  the existing `conversations` collection.
+- **AC-PER-1** — Teaching Sessions are stored in a dedicated MongoDB collection.
 - **AC-PER-2** — A stored session document contains: anonymous `_id`, `concept_id`, `mode`,
   `status`, `end_reason`, `learner_turn_count`, `progress_percent`, `confirmed_point_ids`,
   misconception state, `final_score` when ended, `report` when present, `created_at`, and
@@ -387,8 +387,8 @@ Superseded by the frozen contract (read them through the OpenAPI document):
   mastery state, no credentials, no system prompts, and no raw upstream provider payloads.
   A contract test walks the stored documents and asserts no field name or value matches the
   configured secrets and that no `bytes`/`Binary` value is present.
-- **AC-PER-7** — Routes and orchestration code access MongoDB only through a repository class,
-  mirroring `ConversationRepository`. No route, service, or agent imports the pymongo driver.
+- **AC-PER-7** — Routes and orchestration code access MongoDB only through a repository class.
+  No route, service, or agent imports the pymongo driver.
 - **AC-PER-8** — The repository creates its indexes idempotently at startup, and a failure to
   create them logs and continues rather than taking the API down (matching current
   `main.py` behavior).
@@ -407,7 +407,7 @@ Superseded by the frozen contract (read them through the OpenAPI document):
   lifecycle transition → `409`; upstream provider failure → `502`; database unavailable →
   `503`.
 - **AC-ERR-3** — Full upstream detail is logged server-side with enough context to debug, and
-  the log line does not contain the API key. Existing `chat.py` is the prior art.
+  the log line does not contain the API key.
 - **AC-ERR-4** — An unexpected exception in the session routes returns a generic `500` body
   and never leaks a traceback, file path, or prompt text to the client.
 - **AC-ERR-5** — Provider calls have a bounded timeout from configuration. A hung upstream call
@@ -461,11 +461,8 @@ Superseded by the frozen contract (read them through the OpenAPI document):
 
 ### P. Non-regression — `AC-REG`
 
-- **AC-REG-1** — `GET /health`, `POST /api/chat`, and the `/api/conversations` routes keep
-  their current contracts and status codes. The existing test suite passes unchanged.
-- **AC-REG-2** — The stateless `/api/chat` route is not repurposed as the Teaching Session
-  contract and does not read or write session documents.
-- **AC-REG-3** — `ruff` reports no new violations and the whole suite passes with
+- **AC-REG-1** — `GET /health` keeps its current contract and status codes.
+- **AC-REG-2** — `ruff` reports no new violations and the whole suite passes with
   `pytest` from `apps/api`.
 
 ---

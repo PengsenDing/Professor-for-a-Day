@@ -438,7 +438,6 @@ components:
       schema:
         type: integer
         minimum: 0
-        maximum: 8
 
   responses:
     SessionNotFound:
@@ -600,7 +599,8 @@ components:
           const: 0
         turns_remaining:
           type: integer
-          const: 8
+          minimum: 0
+          description: The session's configured turn budget (8 by default).
         status:
           type: string
           const: active
@@ -662,7 +662,6 @@ components:
         turn_number:
           type: integer
           minimum: 1
-          maximum: 8
         learner_transcript:
           type: string
           description: The learner text that was judged (echo of the submission).
@@ -684,11 +683,9 @@ components:
         learner_turn_count:
           type: integer
           minimum: 1
-          maximum: 8
         turns_remaining:
           type: integer
           minimum: 0
-          maximum: 7
         status:
           $ref: "#/components/schemas/SessionStatus"
         end_reason:

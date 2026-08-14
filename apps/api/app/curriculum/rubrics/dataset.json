@@ -1,0 +1,46 @@
+{
+  "concept_id": "dataset",
+  "points": [
+    {
+      "id": "ds-1",
+      "label": "What a dataset is",
+      "description": "The learner states that a dataset is a collection of examples (rows, samples, or instances) gathered for the model to learn from, and gives at least one concrete example such as images, emails, or measurements."
+    },
+    {
+      "id": "ds-2",
+      "label": "Structure: examples and attributes",
+      "description": "The learner explains that each example in a dataset is described by the same set of attributes (columns, fields, or features), so the dataset can be pictured as a table where rows are examples and columns are attributes."
+    },
+    {
+      "id": "ds-3",
+      "label": "Quality and representativeness matter",
+      "description": "The learner states that a model can only learn patterns that are present in its dataset, so the dataset must be large enough and representative of the situations the model will face; biased, noisy, or unrepresentative data leads to bad predictions."
+    }
+  ],
+  "misconceptions": [
+    {
+      "id": "ds-mc-1",
+      "summary": "More data is always better, so any extra rows automatically improve the model.",
+      "correction": "The learner explains that data quality and representativeness matter as much as quantity: adding mislabeled, duplicated, or unrepresentative rows can hurt the model, so extra data only helps when it is relevant and correctly reflects the target population."
+    },
+    {
+      "id": "ds-mc-2",
+      "summary": "A dataset is just whatever the model outputs after it has been trained.",
+      "correction": "The learner clarifies that the dataset is the input to training, collected before or independently of the model; the model's outputs are predictions, not the dataset itself."
+    }
+  ],
+  "probes": {
+    "beginner": [
+      "So a dataset is just... a big file? What is actually inside it?",
+      "If I wanted to build a model that recognizes cats in photos, what would my dataset need to contain?"
+    ],
+    "confident": [
+      "I'm pretty sure that if I just collect a million rows of any data, my model will be great — size is all that matters.",
+      "A dataset and a database are the same thing, right? Any database can be used to train a model as-is."
+    ],
+    "skeptic": [
+      "If my dataset only contains photos taken in daylight, why should I trust the model at night? Doesn't that make the whole approach fragile?",
+      "How do you even know a dataset is representative? Isn't 'representative' just a word people use after the fact?"
+    ]
+  }
+}

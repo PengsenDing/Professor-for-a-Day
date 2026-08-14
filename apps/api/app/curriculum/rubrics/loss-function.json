@@ -1,0 +1,64 @@
+{
+  "concept_id": "loss-function",
+  "points": [
+    {
+      "id": "lf-1",
+      "label": "Loss measures prediction error",
+      "description": "The learner states that a loss function takes a model's prediction and the true label and returns a number quantifying how wrong the prediction is, with lower values meaning better predictions and (typically) zero meaning a perfect prediction."
+    },
+    {
+      "id": "lf-2",
+      "label": "Loss defines the training objective",
+      "description": "The learner explains that training is framed as minimizing the loss averaged (or summed) over the training examples, so the loss function is what turns 'learning' into a concrete optimization problem: the model's parameters are adjusted specifically to push this number down."
+    },
+    {
+      "id": "lf-3",
+      "label": "Different tasks use different losses",
+      "description": "The learner names or describes at least one concrete loss and matches it to its task type: e.g. mean squared error (average of squared differences) for regression, or cross-entropy / log loss (penalizing confident wrong class probabilities) for classification, and says why that pairing makes sense."
+    },
+    {
+      "id": "lf-4",
+      "label": "Loss guides the direction of updates",
+      "description": "The learner explains the feedback role of the loss: because the loss depends on the parameters, its gradient (or more informally, how the loss changes when a parameter changes) tells the training algorithm which direction to adjust each parameter, which is why the loss should be differentiable or at least give usable feedback."
+    },
+    {
+      "id": "lf-5",
+      "label": "Loss is not the same as the evaluation metric",
+      "description": "The learner distinguishes the loss optimized during training from human-facing evaluation metrics like accuracy: e.g. accuracy is a step function that gives no gradient signal, so models train on a surrogate like cross-entropy while being reported on accuracy, and a lower loss does not always mean a better metric score."
+    }
+  ],
+  "misconceptions": [
+    {
+      "id": "lf-mc-1",
+      "summary": "The loss function is the same thing as accuracy — they are just two words for the model's score.",
+      "correction": "The learner explains that accuracy only counts right vs wrong and changes in jumps, giving no smooth signal to learn from, while a loss like cross-entropy varies continuously with the model's confidence; that is why training minimizes a loss rather than directly maximizing accuracy, and why the two can move differently."
+    },
+    {
+      "id": "lf-mc-2",
+      "summary": "There is one universal loss function that every model uses.",
+      "correction": "The learner clarifies that the loss is a design choice matched to the task and goals: regression commonly uses squared error, classification commonly uses cross-entropy, and the choice changes what errors the model cares about (e.g. squared error punishes large errors disproportionately), so choosing the loss is part of defining the problem."
+    },
+    {
+      "id": "lf-mc-3",
+      "summary": "If the training loss reaches (near) zero, the model is finished and will perform perfectly in the real world.",
+      "correction": "The learner explains that near-zero training loss only means the model fits the training examples, which may indicate memorization/overfitting; what matters is the loss or metric on held-out data, and a gap between low training loss and high validation loss is a warning sign, not a success."
+    }
+  ],
+  "probes": {
+    "beginner": [
+      "So the loss is just one number? How can one number describe how wrong the model is across thousands of examples?",
+      "What happens to the loss when the model makes a perfect prediction? And a terrible one?",
+      "Why do we need a formula for wrongness at all — couldn't the model just count how many answers it got right?"
+    ],
+    "confident": [
+      "Loss and accuracy are the same thing, so I can just train the model to maximize accuracy directly.",
+      "Mean squared error works for every problem — I'd use it for classification too, since an error is an error.",
+      "My training loss hit almost zero, so the model is done and guaranteed to work great on new data."
+    ],
+    "skeptic": [
+      "The loss is something a human chose. If I picked a different loss I'd get a different model — so isn't 'the best model' just an artifact of that arbitrary choice?",
+      "Squared error punishes one big mistake more than many small ones. Who says that's the right trade-off — what if in my application ten small errors are worse than one big one?",
+      "If models train on a surrogate loss instead of the metric we actually care about, aren't we always optimizing the wrong thing and just hoping it correlates?"
+    ]
+  }
+}

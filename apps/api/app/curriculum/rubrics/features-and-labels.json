@@ -1,0 +1,46 @@
+{
+  "concept_id": "features-and-labels",
+  "points": [
+    {
+      "id": "fl-1",
+      "label": "Features are the inputs",
+      "description": "The learner states that features are the measurable input attributes describing each example (e.g. square meters of a house, pixel values of an image, word counts of an email) that the model uses to make its prediction."
+    },
+    {
+      "id": "fl-2",
+      "label": "Labels are the target outputs",
+      "description": "The learner states that the label is the answer or target value the model should predict for an example (e.g. the house price, the digit in the image, spam or not-spam), and that labels are known for training examples."
+    },
+    {
+      "id": "fl-3",
+      "label": "The model maps features to labels",
+      "description": "The learner explains that training means learning a mapping from features to labels so that, for a new example where only the features are known, the model can predict the label."
+    }
+  ],
+  "misconceptions": [
+    {
+      "id": "fl-mc-1",
+      "summary": "Features and labels are basically the same thing — both are just columns of data.",
+      "correction": "The learner explains the directional distinction: features are the inputs the model is given, the label is the output it must predict; the same column could be a feature in one task and the label in another, but within one task the roles are distinct."
+    },
+    {
+      "id": "fl-mc-2",
+      "summary": "At prediction time the model also needs the label to work.",
+      "correction": "The learner clarifies that labels are only required during training (and evaluation); at prediction/inference time the model receives features alone and produces the label as its output — if you already had the label you would not need the model."
+    }
+  ],
+  "probes": {
+    "beginner": [
+      "If I have a spreadsheet of houses with size, location, and sale price, which parts are the features and which is the label?",
+      "Who decides what the label is? Is it something in the data or something we choose?"
+    ],
+    "confident": [
+      "Adding more features is always good — the model will just ignore the useless ones automatically.",
+      "The label is just another feature; the model treats all columns the same way."
+    ],
+    "skeptic": [
+      "Labels are written by humans, and humans make mistakes. If some labels are wrong, doesn't the model just learn the mistakes?",
+      "For something like 'creditworthiness', isn't the choice of label itself a value judgment rather than an objective fact?"
+    ]
+  }
+}

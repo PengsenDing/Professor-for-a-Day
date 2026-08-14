@@ -1,0 +1,46 @@
+{
+  "concept_id": "precision-vs-recall",
+  "points": [
+    {
+      "id": "pr-1",
+      "label": "Precision: how trustworthy are positive predictions",
+      "description": "The learner defines precision as the fraction of predicted positives that are actually positive (TP / (TP + FP)) — in words, 'when the model says yes, how often is it right' — and ties it to the cost of false positives."
+    },
+    {
+      "id": "pr-2",
+      "label": "Recall: how many real positives were found",
+      "description": "The learner defines recall as the fraction of actual positives the model successfully identifies (TP / (TP + FN)) — in words, 'of all the real cases, how many did we catch' — and ties it to the cost of false negatives."
+    },
+    {
+      "id": "pr-3",
+      "label": "The trade-off and choosing by context",
+      "description": "The learner explains that precision and recall typically trade off (e.g. lowering the decision threshold catches more positives, raising recall but admitting more false alarms, lowering precision) and gives a context-appropriate priority: e.g. disease screening favors recall, spam filtering or arrest decisions favor precision."
+    }
+  ],
+  "misconceptions": [
+    {
+      "id": "pr-mc-1",
+      "summary": "Precision and recall are two formulas for the same idea, so a model good at one is automatically good at the other.",
+      "correction": "The learner explains that the two metrics divide the true positives by different denominators (all predicted positives vs all actual positives), penalize different errors (FP vs FN), and typically move in opposite directions as the decision threshold shifts — a model can have high precision with terrible recall (predicting positive only when certain) and vice versa (predicting positive for everyone)."
+    },
+    {
+      "id": "pr-mc-2",
+      "summary": "You should always maximize both to 100% — any decent model achieves perfect precision and perfect recall.",
+      "correction": "The learner clarifies that with noisy, overlapping real-world data perfect scores on both are unattainable, so practitioners choose an operating point on the trade-off curve based on which error is costlier, or balance them with a summary like the F1 score."
+    }
+  ],
+  "probes": {
+    "beginner": [
+      "Can you explain precision and recall with a concrete story, like a test for a disease? I mix them up constantly.",
+      "Which mistakes does precision punish, and which does recall punish?"
+    ],
+    "confident": [
+      "I can trivially get 100% recall by flagging every single case as positive — which proves my model is great.",
+      "Precision and recall always rise together; improving one automatically improves the other."
+    ],
+    "skeptic": [
+      "Both metrics ignore the true negatives entirely. Isn't it dangerous to judge a classifier while ignoring a whole cell of the confusion matrix?",
+      "F1 averages precision and recall as if their costs were equal. In a real hospital or courtroom they never are — so isn't optimizing F1 just dodging the actual ethical decision?"
+    ]
+  }
+}

@@ -1,0 +1,46 @@
+{
+  "concept_id": "overfitting",
+  "points": [
+    {
+      "id": "of-1",
+      "label": "What overfitting is",
+      "description": "The learner states that overfitting means the model fits the training data too closely — including its noise and quirks — so it performs well on training examples but poorly on new, unseen data."
+    },
+    {
+      "id": "of-2",
+      "label": "How to detect it",
+      "description": "The learner explains that overfitting is detected by comparing performance on training data versus held-out validation/test data: a large gap (low training error, much higher validation error) is the signature of overfitting."
+    },
+    {
+      "id": "of-3",
+      "label": "Causes and remedies",
+      "description": "The learner names at least one cause (model too complex for the amount of data, training too long, too little data) and at least one remedy (more/better data, a simpler model, regularization, early stopping)."
+    }
+  ],
+  "misconceptions": [
+    {
+      "id": "of-mc-1",
+      "summary": "The better a model scores on its training data, the better it will be in the real world.",
+      "correction": "The learner explains that training performance alone is misleading because the model may have memorized the training set; real-world quality is estimated on data the model never trained on, and chasing training accuracy past a point actively hurts generalization."
+    },
+    {
+      "id": "of-mc-2",
+      "summary": "Overfitting only happens with huge neural networks, so small models are safe.",
+      "correction": "The learner clarifies that overfitting is about the balance between model flexibility and data: even a small model (e.g. a high-degree polynomial on ten points, or a deep decision tree on little data) overfits when its capacity is large relative to the available data."
+    }
+  ],
+  "probes": {
+    "beginner": [
+      "How can a model be 'too good' at the training data? Isn't fitting the data the whole point?",
+      "What does overfitting look like in practice — what numbers would tell me it's happening?"
+    ],
+    "confident": [
+      "My model gets 100% on the training set, so it has fully learned the problem and will ace new data too.",
+      "Overfitting can't happen to me because I'm using a simple model, and simple models never overfit."
+    ],
+    "skeptic": [
+      "Modern giant networks have far more parameters than training examples, yet they generalize. Doesn't that break the whole overfitting story?",
+      "Where exactly is the line between learning a fine-grained real pattern and fitting noise? Isn't 'noise' just pattern we haven't explained yet?"
+    ]
+  }
+}

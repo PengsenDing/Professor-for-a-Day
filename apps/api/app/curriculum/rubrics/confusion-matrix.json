@@ -1,0 +1,46 @@
+{
+  "concept_id": "confusion-matrix",
+  "points": [
+    {
+      "id": "cm-1",
+      "label": "What the table shows",
+      "description": "The learner describes the confusion matrix as a table comparing predicted classes against actual classes, where each cell counts examples with that (actual, predicted) combination — for binary classification: true positives, false positives, true negatives, and false negatives."
+    },
+    {
+      "id": "cm-2",
+      "label": "The two error types are different",
+      "description": "The learner explains that the matrix separates the two ways of being wrong — false positives (predicted positive, actually negative) and false negatives (predicted negative, actually positive) — and gives an example where the two errors have different real-world costs (e.g. spam filter vs disease screening)."
+    },
+    {
+      "id": "cm-3",
+      "label": "Why accuracy alone misleads",
+      "description": "The learner explains that a single accuracy number hides the error structure, especially with imbalanced classes: e.g. predicting 'negative' for everyone on a 99%-negative dataset scores 99% accuracy while the confusion matrix exposes that every positive was missed."
+    }
+  ],
+  "misconceptions": [
+    {
+      "id": "cm-mc-1",
+      "summary": "High accuracy means the classifier is good, so there's no need to look at the individual cells.",
+      "correction": "The learner explains that with imbalanced classes high accuracy can coexist with total failure on the minority class; the confusion matrix reveals this because the false-negative (or false-positive) cell stays large even when overall accuracy is high."
+    },
+    {
+      "id": "cm-mc-2",
+      "summary": "A false positive and a false negative are equally bad — an error is an error.",
+      "correction": "The learner clarifies that the costs of the two error types depend on the application: missing a cancer case (false negative) is far worse than a false alarm, while wrongly blocking a legitimate email (false positive) may be worse than letting one spam through — which is exactly why the matrix keeps them separate."
+    }
+  ],
+  "probes": {
+    "beginner": [
+      "What do 'true positive' and 'false positive' actually mean? Which word refers to the prediction and which to reality?",
+      "Can you fill in a tiny confusion matrix for me with a concrete example, like a spam filter on 10 emails?"
+    ],
+    "confident": [
+      "My classifier is 99% accurate, so it's excellent — no need to dig into any matrix.",
+      "False positives and false negatives are interchangeable; any metric that lumps them together is fine."
+    ],
+    "skeptic": [
+      "The matrix depends on the decision threshold I picked. Shift the threshold and every cell changes — so what does one matrix really tell me about the model?",
+      "The confusion matrix comes from one test set at one moment. If the class balance in production differs, aren't all these cell counts misleading?"
+    ]
+  }
+}

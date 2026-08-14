@@ -21,3 +21,6 @@ venv/
 .DS_Store
 .idea/
 .vscode/
+
+# Local smoke-test helper (hits live providers; not part of the repo)
+infrastructure/scripts/smoke_roundtrip.sh

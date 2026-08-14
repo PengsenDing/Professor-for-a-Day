@@ -1,0 +1,35 @@
+{
+  "concepts": [
+    { "id": "dataset", "title": "Dataset", "summary": "A collection of examples used to teach or evaluate a model." },
+    { "id": "features-and-labels", "title": "Features and Labels", "summary": "The inputs a model sees and the answers it learns to predict." },
+    { "id": "model", "title": "Model", "summary": "A function with learnable parameters that maps features to predictions." },
+    { "id": "training-vs-inference", "title": "Training vs. Inference", "summary": "Learning parameters from data versus using them to predict." },
+    { "id": "supervised-learning", "title": "Supervised Learning", "summary": "Learning from examples that include the correct answer." },
+    { "id": "unsupervised-learning", "title": "Unsupervised Learning", "summary": "Finding structure in data without labeled answers." },
+    { "id": "neural-networks", "title": "Neural Networks", "summary": "Layered models that learn hierarchical representations." },
+    { "id": "loss-function", "title": "Loss Function", "summary": "A number that measures how wrong the model's predictions are." },
+    { "id": "gradient-descent", "title": "Gradient Descent", "summary": "Iteratively adjusting parameters downhill along the loss gradient." },
+    { "id": "learning-rate", "title": "Learning Rate", "summary": "The step size taken on each gradient descent update." },
+    { "id": "overfitting", "title": "Overfitting", "summary": "Memorizing training data at the cost of generalization." },
+    { "id": "regularization", "title": "Regularization", "summary": "Techniques that penalize complexity to improve generalization." },
+    { "id": "train-validation-test-split", "title": "Train/Validation/Test Split", "summary": "Separating data to train, tune, and honestly evaluate." },
+    { "id": "confusion-matrix", "title": "Confusion Matrix", "summary": "A table of prediction outcomes against true classes." },
+    { "id": "precision-vs-recall", "title": "Precision vs. Recall", "summary": "Two complementary views of a classifier's mistakes." }
+  ],
+  "edges": [
+    { "from": "dataset", "to": "features-and-labels" },
+    { "from": "features-and-labels", "to": "model" },
+    { "from": "model", "to": "training-vs-inference" },
+    { "from": "training-vs-inference", "to": "supervised-learning" },
+    { "from": "training-vs-inference", "to": "unsupervised-learning" },
+    { "from": "supervised-learning", "to": "neural-networks" },
+    { "from": "model", "to": "loss-function" },
+    { "from": "loss-function", "to": "gradient-descent" },
+    { "from": "gradient-descent", "to": "learning-rate" },
+    { "from": "supervised-learning", "to": "overfitting" },
+    { "from": "overfitting", "to": "regularization" },
+    { "from": "overfitting", "to": "train-validation-test-split" },
+    { "from": "supervised-learning", "to": "confusion-matrix" },
+    { "from": "confusion-matrix", "to": "precision-vs-recall" }
+  ]
+}

@@ -1,0 +1,46 @@
+{
+  "concept_id": "training-vs-inference",
+  "points": [
+    {
+      "id": "tvi-1",
+      "label": "Training adjusts the model",
+      "description": "The learner states that training is the phase where the model's parameters are adjusted using labeled data, typically by measuring errors on examples and updating parameters to reduce those errors."
+    },
+    {
+      "id": "tvi-2",
+      "label": "Inference uses the frozen model",
+      "description": "The learner states that inference (prediction) is the phase where the already-trained model, with parameters held fixed, is applied to new inputs to produce outputs; no learning happens during inference."
+    },
+    {
+      "id": "tvi-3",
+      "label": "Different requirements per phase",
+      "description": "The learner explains at least one practical difference between the phases: training needs labeled data and is computationally expensive and done ahead of time, while inference needs only features, is comparatively cheap per input, and happens each time the model is used."
+    }
+  ],
+  "misconceptions": [
+    {
+      "id": "tvi-mc-1",
+      "summary": "A deployed model keeps learning from every prediction it makes.",
+      "correction": "The learner clarifies that a standard deployed model does not update itself during inference; its parameters stay fixed until someone retrains it, so using the model more does not make it smarter on its own."
+    },
+    {
+      "id": "tvi-mc-2",
+      "summary": "Training and inference are the same computation, just run at different times.",
+      "correction": "The learner explains that training involves an extra loop absent at inference: computing errors against known labels and updating parameters (e.g. via gradient descent), whereas inference is a single forward pass from input to output with no labels and no updates."
+    }
+  ],
+  "probes": {
+    "beginner": [
+      "So when I use a translation app on my phone, is that training or inference? What is the app actually doing?",
+      "Why does training take days on big computers but getting a prediction takes less than a second?"
+    ],
+    "confident": [
+      "Every time users interact with a model, it automatically learns from them — that's why apps get better over time.",
+      "You need labels at inference time too, otherwise the model couldn't check whether it's right."
+    ],
+    "skeptic": [
+      "If the model is frozen after training, doesn't it become stale as soon as the world changes? What's the point of deploying something that stops learning?",
+      "How can we trust inference on inputs the training data never covered? The freeze seems like it locks in blind spots forever."
+    ]
+  }
+}

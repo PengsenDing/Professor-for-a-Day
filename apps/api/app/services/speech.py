@@ -1,0 +1,54 @@
+"""ElevenLabs speech adapter (AC-STT / AC-TTS).
+
+One provider-neutral interface for speech-to-text and text-to-speech. Audio is
+transient in both directions: uploads are transcribed and discarded, synthesized
+audio is streamed back and never persisted (ADR-0003, AC-SEC-4).
+"""
+
+import logging
+from functools import lru_cache
+
+from elevenlabs.client import AsyncElevenLabs
+
+from ..config import Settings, get_settings
+from .exceptions import SpeechSynthesisError, TranscriptionError
+
+logger = logging.getLogger(__name__)
+
+
+class SpeechService:
+    def __init__(self, settings: Settings) -> None:
+        self._settings = settings
+        self._client = AsyncElevenLabs(
+            api_key=settings.elevenlabs_api_key.get_secret_value(),
+            timeout=settings.elevenlabs_timeout_seconds,
+        )
+
+    async def transcribe(self, audio: bytes) -> str:
+        try:
+            result = await self._client.speech_to_text.convert(
+                file=audio,
+                model_id=self._settings.elevenlabs_stt_model,
+            )
+        except Exception as error:  # noqa: BLE001 - upstream detail stays in the log
+            logger.exception("Transcription failed upstream")
+            raise TranscriptionError("Transcription failed") from error
+        return result.text
+
+    async def synthesize(self, text: str) -> bytes:
+        try:
+            stream = self._client.text_to_speech.convert(
+                voice_id=self._settings.elevenlabs_voice_id,
+                model_id=self._settings.elevenlabs_tts_model,
+                text=text,
+                output_format="mp3_44100_128",
+            )
+            return b"".join([chunk async for chunk in stream])
+        except Exception as error:  # noqa: BLE001 - upstream detail stays in the log
+            logger.exception("Speech synthesis failed upstream")
+            raise SpeechSynthesisError("Speech synthesis failed") from error
+
+
+@lru_cache
+def get_speech_service() -> SpeechService:
+    return SpeechService(get_settings())

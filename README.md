@@ -1,11 +1,18 @@
 # Professor-for-a-Day
 
+Learn by teaching: the learner plays teacher and explains a machine-learning
+concept to an AI student. A Judge evaluates every explanation against a hidden
+rubric, progress rises with demonstrated understanding, and each session ends
+with a Teacher Report.
+
 ## Project status
 
-The backend in `apps/api` is a Python scaffold: FastAPI for the HTTP boundary,
-LangChain for the LLM layer, DeutschlandGPT as the current model provider, and
-MongoDB for conversation persistence. The API key is read only from an
-environment variable and is never sent to the browser.
+The backend in `apps/api` implements the full product API contract frozen in
+[`packages/shared/openapi.yaml`](packages/shared/openapi.yaml): FastAPI for the
+HTTP boundary, LangChain for the LLM layer (DeutschlandGPT), ElevenLabs for
+speech-to-text and text-to-speech, and MongoDB for Teaching Session persistence.
+API keys are read only from environment variables and are never sent to the
+browser. The frontend in `apps/web` is not initialized yet.
 
 ## Run the API locally
 
@@ -20,8 +27,8 @@ pip install -e '.[dev]'
 cp .env.example .env
 ```
 
-Open `apps/api/.env` and replace `replace-with-your-api-key` with your real
-DeutschlandGPT API key.
+Open `apps/api/.env` and fill in your real DeutschlandGPT and ElevenLabs API
+keys. The server refuses to start while either key is missing.
 
 Start a local MongoDB (optional — see below):
 
@@ -35,72 +42,83 @@ Then start the API:
 uvicorn app.main:app --reload --port 8787
 ```
 
-Interactive API docs are served at http://localhost:8787/docs.
+Interactive API docs are served at http://localhost:8787/docs, and the schema at
+`/openapi.json` matches the checked-in contract (enforced by
+`tests/test_contract.py`).
 
-Check the health endpoint:
+## The product API
+
+All routes are defined in `packages/shared/openapi.yaml` — the authoritative
+contract per [ADR-0001](docs/adr/0001-openapi-is-the-product-api-contract.md).
 
 ```bash
+# Health and curriculum
 curl http://localhost:8787/health
-```
+curl http://localhost:8787/api/curriculum
 
-Send a chat request through the local backend:
-
-```bash
-curl http://localhost:8787/api/chat \
+# Start a Teaching Session (the AI student opens with a question)
+curl -s http://localhost:8787/api/sessions \
   -H 'Content-Type: application/json' \
-  -d '{"messages":[{"role":"user","content":"请用一句话介绍德国。"}]}'
+  -d '{"concept_id":"gradient-descent","mode":"confident"}'
+
+# Submit a Teaching Turn (idempotent via client_turn_id)
+curl -s http://localhost:8787/api/sessions/$SESSION_ID/turns \
+  -H 'Content-Type: application/json' \
+  -d '{"learner_text":"Gradient descent steps opposite the gradient...","input_mode":"text","client_turn_id":"'$(uuidgen)'"}'
+
+# Fetch the spoken version of a reply (turn 0 = the opening question)
+curl -s http://localhost:8787/api/sessions/$SESSION_ID/turns/0/speech -o reply.mp3
+
+# Finish early and get the Teacher Report
+curl -s -X POST http://localhost:8787/api/sessions/$SESSION_ID/finish
+
+# Transcribe recorded audio (the transcript is then submitted as a normal turn)
+curl -s http://localhost:8787/api/speech/transcriptions -F 'audio=@take.webm'
 ```
 
-The response is normalised to `{"reply": "...", "model": "..."}` instead of the
-raw provider payload. Under the hood LangChain's `ChatOpenAI` talks to
-DeutschlandGPT's OpenAI-compatible `/chat/completions` endpoint, so the provider
-can be swapped without touching the routes. The model can be changed with
-`DEUTSCHLANDGPT_MODEL` or per request with a `model` field.
+Errors use one provider-neutral envelope:
+`{"error": {"code": "<ENUM>", "message": "<text>"}}`.
 
-## Conversation storage (MongoDB)
+## Persistence (MongoDB)
 
-Conversations are stored in MongoDB through a repository layer, so no route or
-service talks to the driver directly. Messages are embedded in the conversation
-document, and `updated_at` is indexed for the "recent sessions" listing.
+Teaching Sessions live in the `teaching_sessions` collection behind a repository
+layer; no route or service talks to the driver directly. Turns are embedded in
+the session document and written together with the updated progress in a single
+update, so a reader never observes a turn without its progress. Sessions are
+anonymous and never contain audio or credentials.
 
 MongoDB is **optional for development**: the API still starts when it is
-unreachable, `GET /health` then reports `"database": "down"`, and the
-conversation routes answer `503` while `/api/chat` keeps working.
+unreachable, `GET /health` then reports `"database": "down"`, `/api/curriculum`
+keeps answering `200`, and the session routes answer `503`.
 
-```bash
-# Create a session, capture its id, add a turn, then read it back
-ID=$(curl -s -X POST http://localhost:8787/api/conversations \
-  -H 'Content-Type: application/json' -d '{"title":"Quantenmechanik"}' \
-  | python -c 'import json,sys; print(json.load(sys.stdin)["id"])')
-
-curl -s -X POST http://localhost:8787/api/conversations/$ID/messages \
-  -H 'Content-Type: application/json' \
-  -d '{"messages":[{"role":"user","content":"Was ist Superposition?"}]}'
-
-curl -s "http://localhost:8787/api/conversations?limit=20"
-curl -s -X DELETE http://localhost:8787/api/conversations/$ID
-```
-
-Persisting `/api/chat` turns into a conversation is deliberately not wired up
-yet — the chat endpoint stays stateless until the agent loop lands.
-
-Run the tests and linter:
+## Tests
 
 ```bash
 pytest && ruff check .
 ```
 
-The repository tests need a running MongoDB and **skip automatically** when none
-is reachable; they use a separate `professor_for_a_day_test` database and drop
-their collection afterwards.
+The suite runs without live providers: the Judge, AI Student, and speech
+adapters are replaced with fakes through FastAPI dependency overrides. The
+repository integration tests need a running MongoDB and **skip automatically**
+when none is reachable; they use a separate `professor_for_a_day_test` database
+and drop their collection afterwards.
 
-## Planned architecture
+Two live smoke tests (real DeutschlandGPT and ElevenLabs credentials) are
+opt-in and never run by default:
 
-- `apps/web` — React + Tailwind frontend
-- `apps/api` — Python (FastAPI + LangChain + MongoDB) backend/API boundary
-- `packages/shared` — shared types and contracts between frontend and backend
+```bash
+RUN_LIVE_SMOKE=1 pytest tests/test_smoke_live.py -v
+```
+
+## Architecture
+
+- `apps/web` — React + Tailwind frontend (not initialized)
+- `apps/api` — Python (FastAPI + LangChain + ElevenLabs + MongoDB) backend
+- `packages/shared` — `openapi.yaml`, the product API contract
 - `packages/config` — shared, non-secret configuration and tooling settings
 - `infrastructure` — local development and deployment-related assets
-- `docs` — architecture decisions and implementation notes
+- `docs` — architecture, ADRs, spec, and acceptance criteria
 
-See [`docs/architecture.md`](docs/architecture.md) for the initial boundaries.
+See [`docs/architecture.md`](docs/architecture.md) for the layering and
+[`docs/backend-acceptance-criteria.md`](docs/backend-acceptance-criteria.md)
+for what "done" means for the backend.

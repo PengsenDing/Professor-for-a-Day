@@ -1,0 +1,64 @@
+{
+  "concept_id": "gradient-descent",
+  "points": [
+    {
+      "id": "gd-1",
+      "label": "Goal: minimize the loss",
+      "description": "The learner states that gradient descent is an iterative optimization algorithm whose goal is to find parameter values that minimize the loss function, i.e. it searches for the low point of the loss landscape rather than solving for it in one step."
+    },
+    {
+      "id": "gd-2",
+      "label": "The gradient points uphill; we step downhill",
+      "description": "The learner explains that the gradient of the loss with respect to the parameters gives the direction of steepest increase, so each update moves the parameters in the opposite (negative gradient) direction — the learner conveys the 'walk downhill' idea and correctly ties the step direction to the negative of the gradient."
+    },
+    {
+      "id": "gd-3",
+      "label": "The update rule and iteration",
+      "description": "The learner describes the update loop concretely: repeatedly compute the loss (or its gradient) on training data, then update each parameter by subtracting the learning rate times its gradient (new_w = w - lr * gradient, in words or formula), and repeat until the loss stops improving or a step budget is reached."
+    },
+    {
+      "id": "gd-4",
+      "label": "Step size via the learning rate",
+      "description": "The learner explains that the size of each step is controlled by the learning rate multiplying the gradient, and states at least one failure mode: steps too large can overshoot the minimum or diverge, steps too small make progress painfully slow."
+    },
+    {
+      "id": "gd-5",
+      "label": "Local minima and practical variants",
+      "description": "The learner acknowledges a limitation or practical variant: e.g. gradient descent can get stuck in local minima or saddle points on non-convex losses and is only guaranteed to find the global minimum for convex problems, or that stochastic/mini-batch gradient descent estimates the gradient from a subset of data to make each step cheaper and add helpful noise."
+    }
+  ],
+  "misconceptions": [
+    {
+      "id": "gd-mc-1",
+      "summary": "Gradient descent always finds the single best possible model, since it keeps improving until it reaches the bottom.",
+      "correction": "The learner explains that on non-convex loss surfaces (like neural networks) gradient descent only converges toward a local minimum or flat region near where it started descending; different initializations can end at different solutions, and there is no general guarantee of reaching the global minimum."
+    },
+    {
+      "id": "gd-mc-2",
+      "summary": "The gradient tells the model the direction toward the answer, so following the gradient means moving toward the minimum.",
+      "correction": "The learner clarifies the sign: the gradient points in the direction of steepest ascent (loss increasing fastest), so gradient descent moves against the gradient; moreover it is a local direction based on the slope right here, not a bearing toward the minimum's actual location."
+    },
+    {
+      "id": "gd-mc-3",
+      "summary": "Gradient descent computes the answer in one shot, like solving an equation.",
+      "correction": "The learner explains that gradient descent is inherently iterative: each step uses only local slope information to make a small improvement, and many steps are needed; this is exactly why it works on huge models where solving for the optimum directly is impossible."
+    }
+  ],
+  "probes": {
+    "beginner": [
+      "People keep saying 'walking downhill in fog' — what is the hill, and what does taking one step mean for the actual numbers in the model?",
+      "What exactly is a gradient? Is it one number or many?",
+      "How does the algorithm know when to stop walking?"
+    ],
+    "confident": [
+      "Gradient descent is guaranteed to find the best model — you just run it long enough and it reaches the global minimum.",
+      "You move in the direction of the gradient, because the gradient points at the minimum.",
+      "Gradient descent needs to see the entire dataset for every single step, otherwise the math is invalid."
+    ],
+    "skeptic": [
+      "If the loss surface has millions of dimensions and countless local minima, isn't it pure luck that gradient descent lands anywhere good?",
+      "The gradient only describes the slope at the current point. Why should greedy local steps ever add up to globally sensible behavior?",
+      "Mini-batch gradients are noisy estimates from a tiny sample. How can training built on noisy guesses be reliable rather than a random walk?"
+    ]
+  }
+}

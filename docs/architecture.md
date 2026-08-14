@@ -1,137 +1,192 @@
-# Professor-for-a-Day — 基础架构
+# Professor-for-a-Day — Architecture
 
-## 目标
+## Goal
 
-先建立清晰的项目边界，为教学 Agent、用户交互、持久化和 LLM 接入提供稳定基础。
-当前后端为 Python 脚手架：FastAPI 负责 HTTP 边界，LangChain 负责 LLM 接入，
-DeutschlandGPT 是当前的模型提供方。业务功能仍将逐步加入。
+Clear project boundaries in service of a learn-by-teaching product: the learner
+plays teacher and explains a machine-learning concept to an AI Student; a Judge
+evaluates every explanation and drives progress, and each session ends with a
+Teacher Report. The backend is Python: FastAPI owns the HTTP boundary, LangChain
+owns LLM access (DeutschlandGPT), ElevenLabs provides speech (STT/TTS), and
+MongoDB provides persistence.
 
-## 目录结构
+**Contract-first**: `packages/shared/openapi.yaml` is the single authoritative
+contract for the product API (ADR-0001). The code is implemented against the
+contract and verified by `tests/test_contract.py`; `/openapi.json` is generated
+by FastAPI and pruned to match the contract. Maintaining a second hand-edited
+contract is forbidden.
+
+## Directory layout
 
 ```text
 Professor-for-a-Day/
 ├── apps/
-│   ├── web/                 # React + Tailwind 前端应用
-│   └── api/                 # Python 后端/API 应用（FastAPI + LangChain）
+│   ├── web/                 # React + Tailwind frontend (not initialized yet)
+│   └── api/                 # Python backend/API (FastAPI + LangChain)
 ├── packages/
-│   ├── shared/              # 前后端共享类型、接口契约、常量
-│   └── config/              # 共享工程配置
+│   ├── shared/              # openapi.yaml: the API contract shared by front and back end
+│   └── config/              # shared engineering configuration
 ├── infrastructure/
-│   ├── docker-compose.yml   # 本地开发用 MongoDB
-│   └── scripts/             # 本地开发、检查和部署辅助脚本
-├── docs/                    # 架构、决策和产品说明
-├── .env.example             # 环境变量名称示例，不放真实密钥
+│   ├── docker-compose.yml   # MongoDB for local development
+│   └── scripts/             # local dev, check, and deployment helper scripts
+├── docs/                    # architecture, decisions (ADRs), and acceptance criteria
+├── .env.example             # environment variable names only, never real secrets
 ├── README.md
 └── LICENSE
 ```
 
-## 分层职责
+## Layer responsibilities
 
 ### `apps/web`
 
-负责浏览器端展示和用户交互：页面、组件、客户端状态和对后端 API 的调用。
-它不直接访问 MongoDB，也不直接保存或使用 DeepSeek API Key。
+Browser-side rendering and interaction. It talks to the backend only through
+the product API; it never touches MongoDB and never sees an API key. Mastery
+(retained progress across sessions) lives in the browser; the backend neither
+stores nor returns it (AC-CAT-8).
 
 ### `apps/api`
 
-负责 HTTP API、身份与请求边界、参数校验，以及协调领域服务。当前目录：
+HTTP API, request validation, session orchestration, and the domain services.
+Current layout:
 
 ```text
 apps/api/
-├── pyproject.toml           # 依赖与工具配置（FastAPI、LangChain、pytest、ruff）
-├── .env.example             # 后端环境变量清单，复制为 .env 后填入真实密钥
+├── pyproject.toml           # dependencies and tooling (FastAPI, LangChain, elevenlabs, pytest, ruff)
+├── .env.example             # backend env var checklist; copy to .env and fill in real keys
 ├── app/
-│   ├── main.py              # FastAPI 入口、CORS、lifespan（Mongo 连接）、路由注册
-│   ├── config.py            # 环境变量配置，密钥只从环境读取
-│   ├── db.py                # MongoDB 客户端生命周期
-│   ├── dependencies.py      # FastAPI 依赖（注入 repository）
-│   ├── schemas.py           # 面向前端的请求/响应契约（Pydantic）
-│   ├── models.py            # 持久化文档模型（与 schemas 分离）
-│   ├── routes/              # 面向前端的 API 路由
-│   │   ├── health.py        # GET /health（含数据库状态）
-│   │   ├── chat.py          # POST /api/chat
-│   │   └── conversations.py # /api/conversations 的增删查
-│   ├── services/            # LLM、对话、课程和评估等应用服务
-│   │   └── llm.py           # LangChain provider（DeutschlandGPT）
-│   ├── repositories/        # MongoDB 数据访问抽象
-│   │   └── conversations.py # conversations 集合
-│   ├── agent/               # Agent 编排与运行循环（占位）
-│   └── tools/               # 可被 Agent 调用的受控工具（占位）
-└── tests/                   # pytest（路由层用假实现；repository 打真实 Mongo，缺库则跳过）
+│   ├── main.py              # FastAPI entrypoint, CORS, lifespan (Mongo), contract-shaped /openapi.json
+│   ├── config.py            # environment-backed settings (DeutschlandGPT, ElevenLabs, turn budget)
+│   ├── db.py                # MongoDB client lifecycle
+│   ├── dependencies.py      # FastAPI dependency injection (repository, Judge, AI Student, orchestrator)
+│   ├── errors.py            # ApiError and the {"error": {code, message}} envelope handlers
+│   ├── schemas/             # contract models, split by domain (curriculum/sessions/speech/errors/health)
+│   ├── curriculum/          # version-controlled catalog and rubrics (data files, AC-CAT-7)
+│   │   ├── catalog.json     # 15 concepts + 14 prerequisite edges (acyclicity-checked)
+│   │   ├── rubrics/         # one rubric per concept (points, misconceptions, per-mode probes)
+│   │   └── rubrics.py       # rubric models and load-time validation
+│   ├── routes/              # client-facing API routes (thin; logic lives in the orchestrator)
+│   │   ├── health.py        # GET /health (includes database status)
+│   │   ├── curriculum.py    # GET /api/curriculum
+│   │   ├── sessions.py      # POST /api/sessions, /turns, /finish, GET .../speech
+│   │   └── speech.py        # POST /api/speech/transcriptions
+│   ├── services/
+│   │   ├── llm.py           # LangChain provider (DeutschlandGPT; the only module that knows the vendor)
+│   │   ├── judge.py         # Judge adapter: structured evaluation + one bounded repair retry
+│   │   ├── student.py       # AI Student adapter: mode-conditioned opening question and replies
+│   │   ├── evaluation.py    # the Judge's structured output contract (AC-JDG-1)
+│   │   ├── scoring.py       # pure scoring engine: sticky confirmations, monotonic progress, misconception gate
+│   │   ├── report.py        # Teacher Report builder (deterministic, grounded in Judge evidence)
+│   │   ├── orchestrator.py  # session orchestration: Judge → scoring → AI Student → one atomic write
+│   │   ├── speech.py        # ElevenLabs adapter (STT/TTS; audio never cached or persisted)
+│   │   └── exceptions.py    # provider-neutral service exceptions
+│   ├── repositories/
+│   │   └── sessions.py      # teaching_sessions collection; embedded turns, single atomic update
+│   ├── agent/               # agent orchestration and run loop (placeholder)
+│   └── tools/               # controlled tools callable by agents (placeholder)
+└── tests/                   # pytest: contract drift test, fake-adapter acceptance suite, real-Mongo integration
 ```
 
-`services/llm.py` 是唯一知道模型提供方的模块：DeutschlandGPT 提供
-OpenAI 兼容的 `/chat/completions`，因此用 LangChain 的 `ChatOpenAI` 覆盖
-`base_url` 接入。路由层只依赖 LangChain Runnable，日后换提供方不需要改路由。
+### Orchestration of a Teaching Turn
 
-`build_chat_chain()` 是后续加入 Prompt 模板、检索、Tool Calling 和记忆的接缝。
+1. **Judge first** (AC-TRN-2): receives the cumulative conversation and the
+   current rubric state, returns a structured evaluation.
+2. **Scoring engine** (`scoring.py`, a pure function): folds the evaluation in,
+   discards hallucinated ids with a warning log; progress is
+   `round(confirmed / required * 100)`, capped at 99 while the misconception
+   gate is unsatisfied.
+3. **AI Student reply**: receives the Judge's recommended probe; if no
+   misconception challenge has been posed yet, the orchestrator assigns one
+   rubric misconception for the student to voice.
+4. **One atomic write**: the turn, its evaluation, the progress, and the
+   counters land in a single `update_one` (AC-TRN-9 / AC-PER-10). Retries with
+   the same `client_turn_id` replay the stored envelope without any provider
+   call (AC-IDM).
 
-### MongoDB 数据层
+### Speech
 
-`db.py` 在应用 lifespan 中创建唯一的 `AsyncMongoClient`（pymongo 原生异步驱动，
-Motor 已弃用），挂在 `app.state` 上；路由通过 `dependencies.py` 拿到 repository，
-不接触 driver。URI 可能含密码，因此日志里只出现数据库名，不出现 URI。
+Synthesize-on-fetch (ADR-0003): JSON responses carry no audio. Only when the
+client calls `GET /api/sessions/{id}/turns/{n}/speech` is the stored reply
+synthesized with the single server-configured voice; audio is never cached,
+never written to disk, never persisted. Voice input is two-step:
+`POST /api/speech/transcriptions` only transcribes, and the transcript is then
+submitted through the ordinary `/turns` contract (`input_mode: "voice"`).
 
-`repositories/conversations.py` 是唯一知道文档结构的模块：消息内嵌在会话文档中
-（一次读取即拿到整段会话），并对 `updated_at` 建降序索引供“最近会话”列表使用。
-若单个会话超过 16MB 文档上限，可在不改动 repository 接口的前提下把消息拆到独立集合。
+### MongoDB data layer
 
-**Mongo 在开发期是可选的**：连不上时应用照常启动，`/health` 返回
-`"database": "down"`，`/api/conversations` 返回 503，而 `/api/chat` 不受影响。
-本地启动：`docker compose -f infrastructure/docker-compose.yml up -d`。
+`db.py` creates the one `AsyncMongoClient` (pymongo's native async driver)
+inside the application lifespan and hangs it on `app.state`. Routes and the
+orchestrator reach data only through `repositories/sessions.py` (AC-PER-7).
+The URI may contain credentials, so logs only ever show the database name.
+
+`repositories/sessions.py` is the only module that knows the document
+structure: turns are embedded in the session document, and one update writes
+the turn, the progress, and the counters together — a reader can never observe
+a turn without its progress. Sessions are anonymous: no owner, no IP, and no
+audio of any kind is stored (AC-PER-5/6).
+
+**Mongo is optional during development**: the app starts even when it is
+unreachable — `/health` reports `"database": "down"`, `/api/curriculum` still
+answers `200`, and the `/api/sessions*` routes answer `503` with the
+`DB_UNAVAILABLE` error envelope. Start a local instance with:
+`docker compose -f infrastructure/docker-compose.yml up -d`.
 
 ### `packages/shared`
 
-存放前后端都需要理解的类型和协议，例如消息角色、会话摘要、Agent 状态和
-API 请求/响应结构。这里不应放数据库连接、密钥或浏览器专属代码。
+Holds `openapi.yaml` — the product contract shared by frontend and backend.
+No database connections, secrets, or browser-specific code belong here.
 
 ### `packages/config`
 
-集中放置前端 TypeScript、Lint、格式化和测试等共享配置，减少多个应用之间的配置
-漂移。后端的依赖和工具配置放在 `apps/api/pyproject.toml`。
+Central home for shared frontend TypeScript, lint, formatting, and test
+configuration. Backend dependencies and tooling live in
+`apps/api/pyproject.toml`.
 
 ### `infrastructure`
 
-放置 MongoDB 本地开发、容器化、部署和运维相关内容。它与应用代码分离，便于
-未来替换部署方式。
+MongoDB for local development plus containerization, deployment, and
+operations assets, kept separate from application code.
 
-## 依赖方向
+## Dependency direction
 
 ```text
-web ────────► shared
+web ────────► shared (openapi.yaml)
   │
-  └─────────► api ───────► shared
-                         ├► agent/services
+  └─────────► api ───────► shared (contract verification)
+                         ├► orchestrator ─► judge / student / scoring / report
                          ├► repositories ───► MongoDB
-                         └► LLM provider
+                         ├► LLM provider (DeutschlandGPT)
+                         └► speech provider (ElevenLabs)
 ```
 
-基本规则：
+Ground rules:
 
-1. 前端只能通过 API 与后端交互。
-2. API Key 只存在服务端环境中。
-3. Agent 不直接操作数据库连接，而是通过服务或 repository 访问数据。
-4. 共享包只放稳定的协议和类型，不承载业务实现。
-5. 先定义边界，再逐步实现功能；不要一开始把所有逻辑塞进单个 API 路由。
+1. The frontend interacts with the backend only through the API.
+2. API keys (DeutschlandGPT, ElevenLabs) exist only in the server environment.
+3. Routes and the orchestrator never touch the database connection directly;
+   all data access goes through the repository.
+4. Rubric internals (evidence criteria, corrections, probe text) never appear
+   in a client response.
+5. Every error crosses the boundary as the `{"error": {code, message}}`
+   envelope — provider-neutral, never naming a vendor, model, or upstream
+   detail.
 
-## 后续实现顺序
+## Test strategy
 
-1. ~~初始化后端最小启动入口，并把 DeutschlandGPT 抽象为 LLM provider。~~（已完成）
-2. ~~接入 MongoDB 的连接层与 conversations 数据模型。~~（已完成）
-3. 把 `/api/chat` 的一问一答写入会话（可选 `conversation_id`），让对话有记忆。
-4. 确定 monorepo 工具和前端包管理器。
-5. 初始化前端最小启动入口。
-6. 定义共享 API 类型和错误格式（后端契约已在 `app/schemas.py`）。
-7. 增加流式响应（`/api/chat/stream`，基于 LangChain `astream`）。
-8. 实现最小 Agent Loop，再增加 Tool Calling、记忆和多 Agent 编排。
-9. 最后扩展教学场景和用户界面。
+- `tests/test_contract.py`: the contract drift test — compares the runtime
+  `/openapi.json` against `packages/shared/openapi.yaml` item by item (paths,
+  methods, status codes, content types, component fields, enums).
+- Acceptance suite (fake adapters + fake repository injected via
+  `dependency_overrides`): session lifecycle, Judge-before-Student ordering,
+  idempotent retries, prompt-injection resistance, provider-failure
+  degradation, and the speech boundaries (413/415/502).
+- `tests/test_sessions_repository.py`: integration against a real MongoDB,
+  skipped automatically when none is reachable.
+- `tests/test_smoke_live.py`: T21/T22 smoke tests with real credentials —
+  manual opt-in via `RUN_LIVE_SMOKE=1`, never run in CI.
 
-## 当前明确不实现的内容
+## Explicitly not implemented
 
-- 页面和交互功能
-- 用户登录（`conversations` 目前没有 owner 字段）
-- 会话与聊天的打通：`/api/chat` 仍是无状态单轮，不写库
-- 生产环境的 Mongo 认证、副本集和迁移策略
-- Agent 级别的模型编排
-- Agent Loop、Tool Calling 和多 Agent 逻辑
-- CI/CD、容器和生产部署配置
+- User accounts and cross-device sync (sessions are anonymous)
+- `GET /api/sessions/{id}`: losing the session on a browser refresh is by design
+- Server-side audio caching or persistence (ADR-0003)
+- Production Mongo auth, replica sets, and migration strategy
+- CI/CD, containers, and production deployment configuration

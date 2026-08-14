@@ -1,0 +1,46 @@
+{
+  "concept_id": "neural-networks",
+  "points": [
+    {
+      "id": "nn-1",
+      "label": "Layers of simple units",
+      "description": "The learner describes a neural network as layers of simple units (neurons), where each unit computes a weighted sum of its inputs plus a bias and passes the result through an activation function, and layers feed into the next layer."
+    },
+    {
+      "id": "nn-2",
+      "label": "Nonlinearity enables complex functions",
+      "description": "The learner explains that the nonlinear activation functions are what let stacked layers represent complex, non-linear relationships; without them, stacking layers would collapse into a single linear transformation."
+    },
+    {
+      "id": "nn-3",
+      "label": "Weights are learned from data",
+      "description": "The learner states that the network's weights start out uninformative (e.g. random) and are learned during training by adjusting them to reduce prediction error on the training data, typically with gradient descent and backpropagation."
+    }
+  ],
+  "misconceptions": [
+    {
+      "id": "nn-mc-1",
+      "summary": "Neural networks work the same way as the human brain, just implemented in software.",
+      "correction": "The learner clarifies that the brain analogy is loose inspiration only: artificial neurons are simple arithmetic units (weighted sum plus activation), and real biological neurons and learning are vastly more complex and work differently; the network is a mathematical function, not a simulated brain."
+    },
+    {
+      "id": "nn-mc-2",
+      "summary": "Adding more layers always makes a neural network more accurate.",
+      "correction": "The learner explains that more layers add capacity but also make the network more prone to overfitting and harder to train, so bigger is not automatically better; the right size depends on the task and the amount of data."
+    }
+  ],
+  "probes": {
+    "beginner": [
+      "What does one single 'neuron' in the network actually compute? Can you walk me through it with numbers?",
+      "What's a 'layer', and why do networks have more than one?"
+    ],
+    "confident": [
+      "A neural network is basically a digital brain — its neurons fire just like biological ones, which is why it's intelligent.",
+      "Stacking many linear layers without activation functions still gives you a powerful deep network."
+    ],
+    "skeptic": [
+      "With millions of weights, nobody can explain why the network gave a specific answer. Why should anyone deploy a black box like that in medicine or lending?",
+      "If a network can fit almost any function, couldn't it just be fitting noise? What makes you confident it found a real pattern?"
+    ]
+  }
+}

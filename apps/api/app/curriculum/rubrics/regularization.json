@@ -1,0 +1,46 @@
+{
+  "concept_id": "regularization",
+  "points": [
+    {
+      "id": "reg-1",
+      "label": "Purpose: fight overfitting",
+      "description": "The learner states that regularization is any technique that deliberately constrains or penalizes model complexity during training to reduce overfitting and improve performance on unseen data."
+    },
+    {
+      "id": "reg-2",
+      "label": "How penalty regularization works",
+      "description": "The learner explains the mechanism of at least one penalty method: a term added to the loss (e.g. L2 penalizing large squared weights, L1 penalizing absolute weights and pushing some to exactly zero) makes training trade off fitting the data against keeping weights small/simple, with a strength knob (lambda) controlling the trade-off."
+    },
+    {
+      "id": "reg-3",
+      "label": "The accepted trade-off",
+      "description": "The learner explains that regularization intentionally accepts slightly worse training performance (more bias) in exchange for better generalization (less variance), and names at least one other technique in the same spirit, such as dropout, early stopping, or data augmentation."
+    }
+  ],
+  "misconceptions": [
+    {
+      "id": "reg-mc-1",
+      "summary": "Regularization improves the model's fit on the training data — that's why we add it.",
+      "correction": "The learner clarifies that regularization typically makes training-set fit slightly worse on purpose; its benefit shows up on validation/test data, because restraining the model keeps it from fitting noise."
+    },
+    {
+      "id": "reg-mc-2",
+      "summary": "More regularization is always safer, so the penalty should be set as strong as possible.",
+      "correction": "The learner explains that too much regularization causes underfitting — the model becomes too constrained to capture real patterns — so the regularization strength must be tuned (usually on a validation set) to balance underfitting against overfitting."
+    }
+  ],
+  "probes": {
+    "beginner": [
+      "Why would we ever add something to the loss that makes the training error worse? That sounds backwards.",
+      "What does 'keeping the weights small' have to do with the model being simpler?"
+    ],
+    "confident": [
+      "Regularization is a trick to boost training accuracy — the penalty helps the model fit the training data better.",
+      "L1 and L2 are interchangeable; they do exactly the same thing, so the choice never matters."
+    ],
+    "skeptic": [
+      "Choosing lambda is just another dial tuned until the numbers look good. Aren't we simply overfitting to the validation set one level up?",
+      "Why should 'small weights' equal 'simple truth'? Nature doesn't owe us small coefficients — isn't that assumption arbitrary?"
+    ]
+  }
+}

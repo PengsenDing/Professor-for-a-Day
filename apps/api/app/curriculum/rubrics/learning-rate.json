@@ -1,0 +1,64 @@
+{
+  "concept_id": "learning-rate",
+  "points": [
+    {
+      "id": "lr-1",
+      "label": "What the learning rate controls",
+      "description": "The learner states that the learning rate is a number that scales the size of each parameter update in gradient descent — the gradient gives the direction, and the learning rate determines how far the parameters move in that direction per step (e.g. new_w = w - lr * gradient)."
+    },
+    {
+      "id": "lr-2",
+      "label": "Too high: overshooting and divergence",
+      "description": "The learner explains the failure mode of a too-large learning rate: steps overshoot the minimum, the loss oscillates or bounces across the valley, and in the worst case the loss grows or explodes (diverges) instead of decreasing."
+    },
+    {
+      "id": "lr-3",
+      "label": "Too low: slow or stalled training",
+      "description": "The learner explains the failure mode of a too-small learning rate: each step barely changes the parameters, so training takes far more steps to converge, may appear stuck, and can settle prematurely in a poor region within a fixed compute budget."
+    },
+    {
+      "id": "lr-4",
+      "label": "It is a hyperparameter to be chosen",
+      "description": "The learner states that the learning rate is a hyperparameter set by the practitioner before/around training rather than a parameter learned by the model itself, and that it is typically chosen by experimentation (e.g. trying values on a validation set, often across orders of magnitude like 0.1, 0.01, 0.001)."
+    },
+    {
+      "id": "lr-5",
+      "label": "Schedules and adaptive methods",
+      "description": "The learner mentions that the learning rate need not stay constant: schedules commonly decay it over training (large early steps for fast progress, small late steps for fine convergence), and/or adaptive optimizers like Adam effectively adjust per-parameter step sizes automatically."
+    }
+  ],
+  "misconceptions": [
+    {
+      "id": "lr-mc-1",
+      "summary": "A higher learning rate always means faster learning, so you should crank it up to finish training sooner.",
+      "correction": "The learner explains that beyond a point, larger steps stop helping: the updates overshoot the minimum, making the loss oscillate or diverge, so training gets worse or fails entirely — speed comes from the largest rate that still converges, not the largest rate possible."
+    },
+    {
+      "id": "lr-mc-2",
+      "summary": "The learning rate is something the model learns and optimizes during training, just like its weights.",
+      "correction": "The learner clarifies that the learning rate is a hyperparameter chosen from outside the training loop: gradient descent updates weights using the learning rate but does not itself optimize the learning rate; humans (or automated hyperparameter search, or a preset schedule) set it."
+    },
+    {
+      "id": "lr-mc-3",
+      "summary": "There is one correct learning rate value (like 0.01) that works for every model and dataset.",
+      "correction": "The learner explains that the right learning rate depends on the model, the loss surface, the data, and even the batch size and optimizer, so it must be tuned per problem; a value that trains one model well can make another diverge, which is exactly why practitioners sweep several values."
+    }
+  ],
+  "probes": {
+    "beginner": [
+      "Where does the learning rate actually appear in the update? Is it added to the weights or multiplied by something?",
+      "What would I see happening to the loss if my learning rate were way too big? And way too small?",
+      "How do people pick the number in the first place — is there a formula?"
+    ],
+    "confident": [
+      "Bigger learning rate means faster training, period — I always set it as high as the library allows.",
+      "The model tunes its own learning rate during training, the same way it learns its weights.",
+      "0.01 is the correct learning rate; that's why every tutorial uses it, and it works for any network."
+    ],
+    "skeptic": [
+      "If the whole outcome of training hinges on a magic number found by trial and error, isn't deep learning more alchemy than science?",
+      "A learning rate that's good early in training seems wrong late in training. How can one fixed number ever be right for the whole run?",
+      "Adaptive optimizers like Adam supposedly handle step sizes automatically — so why do people still tune a learning rate for them? Doesn't that contradict the 'adaptive' claim?"
+    ]
+  }
+}

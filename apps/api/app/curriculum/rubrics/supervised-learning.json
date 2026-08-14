@@ -1,0 +1,46 @@
+{
+  "concept_id": "supervised-learning",
+  "points": [
+    {
+      "id": "sl-1",
+      "label": "Learning from labeled examples",
+      "description": "The learner states that supervised learning trains a model on examples where the correct answer (label) is provided, so the model learns by comparing its predictions to the known answers."
+    },
+    {
+      "id": "sl-2",
+      "label": "Goal is generalization to new inputs",
+      "description": "The learner explains that the point of supervised learning is not to reproduce the training answers but to generalize: to predict correct labels for new, unseen inputs."
+    },
+    {
+      "id": "sl-3",
+      "label": "Classification vs regression",
+      "description": "The learner distinguishes the two main supervised task types: classification predicts a discrete category (e.g. spam/not-spam) and regression predicts a continuous number (e.g. a price), giving a correct example of at least one."
+    }
+  ],
+  "misconceptions": [
+    {
+      "id": "sl-mc-1",
+      "summary": "In supervised learning a human supervises the model live, correcting each prediction by hand as it trains.",
+      "correction": "The learner clarifies that 'supervision' refers to the labels in the dataset acting as the answer key; the comparison and correction loop is automatic during training, with no human intervening on individual predictions."
+    },
+    {
+      "id": "sl-mc-2",
+      "summary": "If a model scores perfectly on its training examples, the learning has fully succeeded.",
+      "correction": "The learner explains that success is measured on held-out unseen data, because perfect training performance can come from memorization; a model that fails on new inputs has not learned in the useful sense."
+    }
+  ],
+  "probes": {
+    "beginner": [
+      "Where do the 'right answers' come from in the first place? Does someone have to write them all down?",
+      "Is predicting tomorrow's temperature supervised learning? What would the labels be there?"
+    ],
+    "confident": [
+      "Supervised learning means an engineer watches the model train and manually fixes its mistakes one by one.",
+      "Classification and regression are just two names for the same thing since both predict something."
+    ],
+    "skeptic": [
+      "Labeling millions of examples costs a fortune and labelers disagree with each other. Doesn't supervised learning just launder human inconsistency into a model?",
+      "If the model only ever imitates the labels we gave it, can it ever do better than the humans who labeled the data?"
+    ]
+  }
+}
