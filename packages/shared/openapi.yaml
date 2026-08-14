@@ -1,0 +1,796 @@
+openapi: 3.1.0
+
+info:
+  title: Professor-for-a-Day Product API
+  version: 0.1.0
+  description: |
+    Contract-first API for the Professor-for-a-Day MVP.
+
+    This document is the authoritative agreement between the web frontend and the
+    FastAPI backend (see docs/adr/0001-openapi-is-the-product-api-contract.md).
+    The backend is verified against this file; generated output never redefines it.
+
+    Scope: only the product routes the web app consumes. The legacy `/api/chat`
+    and `/api/conversations` routes are intentionally excluded.
+
+    Key design decisions:
+    - Voice input is two-step: `POST /api/speech/transcriptions` turns audio into
+      text, then the transcript is submitted through the ordinary text-turn
+      contract with `input_mode: "voice"`. Transcription failures never touch a
+      session.
+    - Voice output is synthesize-on-fetch: JSON responses carry no audio. The
+      client fetches `GET /api/sessions/{session_id}/turns/{turn_number}/speech`
+      when it wants a reply spoken (see docs/adr/0003-speech-is-synthesized-on-fetch.md).
+      Clients should cache fetched audio blobs for replay.
+    - Errors use a minimal envelope `{"error": {"code", "message"}}` with an
+      enumerated, provider-neutral `code`. Vendors, models, upstream statuses,
+      and upstream error text never appear in a response.
+    - Turn submissions are idempotent via a client-generated `client_turn_id`.
+    - Mastery is browser-local and appears nowhere in this contract.
+
+# Anonymous by design: the MVP has no accounts or authentication (spec: Out of Scope).
+# Provider credentials live server-side only and never reach this boundary.
+security: []
+
+servers:
+  - url: http://127.0.0.1:8787
+    description: Local development
+
+tags:
+  - name: system
+    description: Process and dependency health.
+  - name: curriculum
+    description: Concept catalog and prerequisite graph. Never invokes an LLM.
+  - name: sessions
+    description: Teaching Session lifecycle — start, turns, finish, speech.
+  - name: speech
+    description: Speech-to-text for voice input.
+
+paths:
+  /health:
+    get:
+      tags: [system]
+      operationId: getHealth
+      summary: Process and database health
+      responses:
+        "200":
+          description: Health status. Never invokes an LLM or speech provider.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+              example:
+                ok: true
+                model: gemini-2.5-pro
+                database: up
+
+  /api/curriculum:
+    get:
+      tags: [curriculum]
+      operationId: getCurriculum
+      summary: Concept catalog and prerequisite edges
+      description: |
+        Returns exactly 15 Concepts and the directed prerequisite edges between
+        them. Backend-owned, version-controlled data; no LLM call, no rubric
+        content, no per-learner state. Edges are recommendations, never locks.
+      responses:
+        "200":
+          description: The full curriculum.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Curriculum"
+              example:
+                concepts:
+                  - { id: dataset, title: Dataset, summary: "A collection of examples used to teach or evaluate a model." }
+                  - { id: features-and-labels, title: Features and Labels, summary: "The inputs a model sees and the answers it learns to predict." }
+                  - { id: model, title: Model, summary: "A function with learnable parameters that maps features to predictions." }
+                  - { id: training-vs-inference, title: Training vs. Inference, summary: "Learning parameters from data versus using them to predict." }
+                  - { id: supervised-learning, title: Supervised Learning, summary: "Learning from examples that include the correct answer." }
+                  - { id: unsupervised-learning, title: Unsupervised Learning, summary: "Finding structure in data without labeled answers." }
+                  - { id: neural-networks, title: Neural Networks, summary: "Layered models that learn hierarchical representations." }
+                  - { id: loss-function, title: Loss Function, summary: "A number that measures how wrong the model's predictions are." }
+                  - { id: gradient-descent, title: Gradient Descent, summary: "Iteratively adjusting parameters downhill along the loss gradient." }
+                  - { id: learning-rate, title: Learning Rate, summary: "The step size taken on each gradient descent update." }
+                  - { id: overfitting, title: Overfitting, summary: "Memorizing training data at the cost of generalization." }
+                  - { id: regularization, title: Regularization, summary: "Techniques that penalize complexity to improve generalization." }
+                  - { id: train-validation-test-split, title: Train/Validation/Test Split, summary: "Separating data to train, tune, and honestly evaluate." }
+                  - { id: confusion-matrix, title: Confusion Matrix, summary: "A table of prediction outcomes against true classes." }
+                  - { id: precision-vs-recall, title: Precision vs. Recall, summary: "Two complementary views of a classifier's mistakes." }
+                edges:
+                  - { from: dataset, to: features-and-labels }
+                  - { from: features-and-labels, to: model }
+                  - { from: model, to: training-vs-inference }
+                  - { from: training-vs-inference, to: supervised-learning }
+                  - { from: training-vs-inference, to: unsupervised-learning }
+                  - { from: supervised-learning, to: neural-networks }
+                  - { from: model, to: loss-function }
+                  - { from: loss-function, to: gradient-descent }
+                  - { from: gradient-descent, to: learning-rate }
+                  - { from: supervised-learning, to: overfitting }
+                  - { from: overfitting, to: regularization }
+                  - { from: overfitting, to: train-validation-test-split }
+                  - { from: supervised-learning, to: confusion-matrix }
+                  - { from: confusion-matrix, to: precision-vs-recall }
+        "503":
+          $ref: "#/components/responses/DatabaseUnavailable"
+
+  /api/sessions:
+    post:
+      tags: [sessions]
+      operationId: startSession
+      summary: Start a Teaching Session
+      description: |
+        Creates a session for one Concept and one AI Student mode and returns the
+        AI Student's opening question as text. The opening question is turn 0 for
+        the speech endpoint. Every session starts at 0% with no cross-session
+        carry-over. If the AI Student call fails, no session is created.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StartSessionRequest"
+            example:
+              concept_id: gradient-descent
+              mode: confident
+      responses:
+        "201":
+          description: Session created; the AI Student has asked its opening question.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionCreated"
+              example:
+                session_id: 66bcd1f2a9c4e35d8f01a2b3
+                concept: { id: gradient-descent, title: Gradient Descent }
+                mode: confident
+                student_text: "I read that gradient descent just tries random parameter values until the loss looks small. That's basically it, right?"
+                progress: { percent: 0 }
+                learner_turn_count: 0
+                turns_remaining: 8
+                status: active
+                active_misconception: null
+        "422":
+          description: Unknown concept, invalid mode, or malformed body.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+              examples:
+                unknown_concept:
+                  value: { error: { code: INVALID_CONCEPT, message: "Unknown concept id." } }
+                invalid_mode:
+                  value: { error: { code: INVALID_MODE, message: "Mode must be beginner, confident, or skeptic." } }
+        "502":
+          $ref: "#/components/responses/GenerationFailed"
+        "503":
+          $ref: "#/components/responses/DatabaseUnavailable"
+
+  /api/sessions/{session_id}/turns:
+    post:
+      tags: [sessions]
+      operationId: submitTurn
+      summary: Submit a learner explanation (one Teaching Turn)
+      description: |
+        Text-only JSON contract. Voice turns are transcribed first via
+        `POST /api/speech/transcriptions` and submitted here with
+        `input_mode: "voice"`.
+
+        Orchestration is Judge-then-Student and atomic: either the full turn
+        envelope is returned and the turn is persisted with its evaluation, or an
+        error is returned and the session is left in its pre-turn state.
+
+        Retries with the same `client_turn_id` return the original envelope
+        without re-running the Judge, the AI Student, or the counters.
+
+        A turn that reaches 100%, or the eighth accepted turn, ends the session
+        in the same envelope (`status: "ended"` with a populated `report`); no
+        extra request is needed.
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SubmitTurnRequest"
+            example:
+              learner_text: "Gradient descent doesn't guess randomly. It computes the gradient of the loss with respect to each parameter and steps in the opposite direction, because the gradient points uphill."
+              input_mode: voice
+              client_turn_id: 4f8b2c1e-9d3a-4e6b-8c7f-2a1d0e9b5c44
+      responses:
+        "200":
+          description: The completed turn envelope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TurnEnvelope"
+              examples:
+                mid_session:
+                  summary: Progress advanced, misconception now active
+                  value:
+                    turn_number: 1
+                    learner_transcript: "Gradient descent doesn't guess randomly. It computes the gradient of the loss with respect to each parameter and steps in the opposite direction, because the gradient points uphill."
+                    student_text: "Okay, so the gradient tells us the direction. But then taking the biggest possible step each time must be fastest — why would anyone use small steps?"
+                    progress: { percent: 40 }
+                    newly_covered_points:
+                      - { id: gd-1, label: "Uses the gradient of the loss" }
+                      - { id: gd-2, label: "Steps opposite the gradient direction" }
+                    active_misconception:
+                      id: gd-mc-1
+                      summary: "Believes the largest possible step size always converges fastest."
+                    learner_turn_count: 1
+                    turns_remaining: 7
+                    status: active
+                    end_reason: null
+                    report: null
+                mastery_reached:
+                  summary: This turn reached 100% and ended the session
+                  value:
+                    turn_number: 3
+                    learner_transcript: "A huge step can overshoot the minimum and even diverge. The learning rate controls step size, and iteration continues until the loss stops improving."
+                    student_text: "That makes sense now — overshooting explains why my loss exploded. Thanks, teacher!"
+                    progress: { percent: 100 }
+                    newly_covered_points:
+                      - { id: gd-4, label: "Iterates until convergence" }
+                    active_misconception: null
+                    learner_turn_count: 3
+                    turns_remaining: 5
+                    status: ended
+                    end_reason: mastery
+                    report:
+                      final_percent: 100
+                      explained_well:
+                        - "Defined the gradient as the direction of steepest increase of the loss."
+                        - "Explained stepping opposite the gradient to reduce loss."
+                        - "Connected learning rate to step size and convergence."
+                      misconceptions_corrected:
+                        - "Largest step size is not fastest: overshooting and divergence."
+                      gaps_and_accidental_implications: []
+                      improvement_suggestion: "Add one concrete numeric example of a single parameter update to ground the algebra."
+                      recommended_next_concept: { id: learning-rate, title: Learning Rate }
+                      mastery_achieved: true
+        "404":
+          $ref: "#/components/responses/SessionNotFound"
+        "409":
+          description: The session has already ended.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+              example:
+                error: { code: SESSION_ENDED, message: "This session has ended; start a new session to continue teaching." }
+        "422":
+          description: Empty, whitespace-only, or over-length learner text; invalid input_mode; malformed client_turn_id.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+              example:
+                error: { code: EMPTY_SUBMISSION, message: "The explanation must not be empty." }
+        "502":
+          $ref: "#/components/responses/GenerationFailed"
+        "503":
+          $ref: "#/components/responses/DatabaseUnavailable"
+
+  /api/sessions/{session_id}/turns/{turn_number}/speech:
+    get:
+      tags: [sessions]
+      operationId: getTurnSpeech
+      summary: Synthesize speech for one AI Student reply
+      description: |
+        Synthesizes the stored `student_text` of the given turn with the single
+        server-configured default voice and returns the audio. `turn_number: 0`
+        is the session's opening question.
+
+        Synthesis happens on every fetch — nothing is cached or persisted
+        server-side. Clients should cache the returned blob for replay. A muted
+        client simply never calls this endpoint. Failures here never affect the
+        session or the text flow.
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+        - $ref: "#/components/parameters/TurnNumber"
+      responses:
+        "200":
+          description: Synthesized speech audio.
+          content:
+            audio/mpeg:
+              schema:
+                type: string
+                format: binary
+        "404":
+          description: Unknown session, or the session has no such turn.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+              examples:
+                session:
+                  value: { error: { code: SESSION_NOT_FOUND, message: "No such session." } }
+                turn:
+                  value: { error: { code: TURN_NOT_FOUND, message: "The session has no such turn." } }
+        "502":
+          description: Speech synthesis failed. Non-blocking — the reply text remains usable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+              example:
+                error: { code: SPEECH_FAILED, message: "Speech synthesis is temporarily unavailable." }
+        "503":
+          $ref: "#/components/responses/DatabaseUnavailable"
+
+  /api/sessions/{session_id}/finish:
+    post:
+      tags: [sessions]
+      operationId: finishSession
+      summary: Finish a Teaching Session early
+      description: |
+        Ends an active session (`end_reason: "learner_finished"`) and returns the
+        Teacher Report — including at 0% progress. Idempotent: finishing an
+        already-ended session returns the same stored report with its original
+        `end_reason` and does not regenerate anything.
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      responses:
+        "200":
+          description: The session is ended and the report is returned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionFinished"
+              example:
+                session_id: 66bcd1f2a9c4e35d8f01a2b3
+                status: ended
+                end_reason: learner_finished
+                progress: { percent: 60 }
+                report:
+                  final_percent: 60
+                  explained_well:
+                    - "Defined the gradient as the direction of steepest increase of the loss."
+                    - "Explained stepping opposite the gradient to reduce loss."
+                  misconceptions_corrected: []
+                  gaps_and_accidental_implications:
+                    - "The role of the learning rate was implied but never stated."
+                  improvement_suggestion: "Explain what controls the size of each update step and what happens when it is too large."
+                  recommended_next_concept: { id: learning-rate, title: Learning Rate }
+                  mastery_achieved: false
+        "404":
+          $ref: "#/components/responses/SessionNotFound"
+        "502":
+          $ref: "#/components/responses/GenerationFailed"
+        "503":
+          $ref: "#/components/responses/DatabaseUnavailable"
+
+  /api/speech/transcriptions:
+    post:
+      tags: [speech]
+      operationId: transcribeAudio
+      summary: Transcribe learner audio to text
+      description: |
+        Pure speech-to-text: accepts an audio upload, returns the transcript, and
+        touches nothing else — no turn is created, no Judge or AI Student call is
+        made, no session is mutated. The client submits the transcript through
+        the ordinary turn contract with `input_mode: "voice"`. Uploaded audio is
+        discarded after transcription and never persisted.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [audio]
+              properties:
+                audio:
+                  type: string
+                  format: binary
+                  description: The recorded learner audio (e.g. webm/opus, wav, or mp3).
+      responses:
+        "200":
+          description: The transcript of the uploaded audio.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Transcription"
+              example:
+                transcript: "Gradient descent computes the gradient of the loss and steps in the opposite direction."
+        "413":
+          description: Upload exceeds the configured size limit. Rejected before any provider call.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+              example:
+                error: { code: UPLOAD_TOO_LARGE, message: "The audio upload exceeds the size limit." }
+        "415":
+          description: Unsupported audio content type. Rejected before any provider call.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+              example:
+                error: { code: UNSUPPORTED_AUDIO_TYPE, message: "This audio format is not supported." }
+        "502":
+          description: Transcription failed upstream. The learner's session is untouched and text input remains usable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+              example:
+                error: { code: TRANSCRIPTION_FAILED, message: "Transcription is temporarily unavailable. You can type your explanation instead." }
+
+components:
+  parameters:
+    SessionId:
+      name: session_id
+      in: path
+      required: true
+      description: The anonymous Teaching Session identifier returned by `POST /api/sessions`.
+      schema:
+        type: string
+        minLength: 1
+    TurnNumber:
+      name: turn_number
+      in: path
+      required: true
+      description: The AI Student reply to synthesize. `0` is the opening question; `n` is the reply produced by learner turn `n`.
+      schema:
+        type: integer
+        minimum: 0
+        maximum: 8
+
+  responses:
+    SessionNotFound:
+      description: Unknown or malformed session id.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+          example:
+            error: { code: SESSION_NOT_FOUND, message: "No such session." }
+    GenerationFailed:
+      description: An upstream language-model call failed. Provider-neutral; the session is left in its pre-request state.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+          example:
+            error: { code: GENERATION_FAILED, message: "The AI Student is temporarily unavailable. Please resubmit." }
+    DatabaseUnavailable:
+      description: The database is not available.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+          example:
+            error: { code: DB_UNAVAILABLE, message: "The database is not available." }
+
+  schemas:
+    Health:
+      type: object
+      required: [ok, model, database]
+      properties:
+        ok:
+          type: boolean
+        model:
+          type: string
+          description: The configured default LLM model name.
+        database:
+          type: string
+          enum: [up, down]
+
+    Curriculum:
+      type: object
+      required: [concepts, edges]
+      properties:
+        concepts:
+          type: array
+          minItems: 15
+          maxItems: 15
+          items:
+            $ref: "#/components/schemas/Concept"
+        edges:
+          type: array
+          description: Directed prerequisite recommendations. Acyclic; never locks a node.
+          items:
+            $ref: "#/components/schemas/PrerequisiteEdge"
+
+    Concept:
+      type: object
+      required: [id, title, summary]
+      properties:
+        id:
+          $ref: "#/components/schemas/ConceptId"
+        title:
+          type: string
+        summary:
+          type: string
+          description: Short learner-facing description. Never contains rubric content.
+
+    ConceptId:
+      type: string
+      pattern: "^[a-z0-9]+(-[a-z0-9]+)*$"
+      description: Stable, URL-safe concept identifier (e.g. `gradient-descent`).
+
+    ConceptRef:
+      type: object
+      required: [id, title]
+      properties:
+        id:
+          $ref: "#/components/schemas/ConceptId"
+        title:
+          type: string
+
+    PrerequisiteEdge:
+      type: object
+      required: [from, to]
+      properties:
+        from:
+          $ref: "#/components/schemas/ConceptId"
+        to:
+          $ref: "#/components/schemas/ConceptId"
+
+    Mode:
+      type: string
+      enum: [beginner, confident, skeptic]
+      description: AI Student mode. Changes question style and depth only — never the rubric or the scoring standard.
+
+    InputMode:
+      type: string
+      enum: [text, voice]
+
+    SessionStatus:
+      type: string
+      enum: [active, ended]
+
+    EndReason:
+      type: string
+      enum: [mastery, learner_finished, turn_limit]
+
+    Progress:
+      type: object
+      required: [percent]
+      properties:
+        percent:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: |
+            Session Progress derived from confirmed rubric coverage. Monotonic
+            within a session. Capped at 99 while no misconception challenge has
+            been posed or any posed challenge is unresolved.
+
+    StartSessionRequest:
+      type: object
+      required: [concept_id, mode]
+      properties:
+        concept_id:
+          $ref: "#/components/schemas/ConceptId"
+        mode:
+          $ref: "#/components/schemas/Mode"
+
+    SessionCreated:
+      type: object
+      required:
+        - session_id
+        - concept
+        - mode
+        - student_text
+        - progress
+        - learner_turn_count
+        - turns_remaining
+        - status
+        - active_misconception
+      properties:
+        session_id:
+          type: string
+        concept:
+          $ref: "#/components/schemas/ConceptRef"
+        mode:
+          $ref: "#/components/schemas/Mode"
+        student_text:
+          type: string
+          minLength: 1
+          description: The AI Student's opening question. Fetch its audio at turn_number 0.
+        progress:
+          $ref: "#/components/schemas/Progress"
+        learner_turn_count:
+          type: integer
+          const: 0
+        turns_remaining:
+          type: integer
+          const: 8
+        status:
+          type: string
+          const: active
+        active_misconception:
+          type: "null"
+
+    SubmitTurnRequest:
+      type: object
+      required: [learner_text, input_mode, client_turn_id]
+      properties:
+        learner_text:
+          type: string
+          minLength: 1
+          maxLength: 8000
+          description: The learner's explanation. For voice turns this is the transcript returned by the transcription endpoint.
+        input_mode:
+          $ref: "#/components/schemas/InputMode"
+        client_turn_id:
+          type: string
+          format: uuid
+          description: Client-generated idempotency key. Retries MUST reuse the same value.
+
+    RubricPointRef:
+      type: object
+      required: [id, label]
+      properties:
+        id:
+          type: string
+          description: Stable rubric point id (e.g. `gd-2`).
+        label:
+          type: string
+          description: Learner-safe label. Internal rubric descriptions never appear.
+
+    ActiveMisconception:
+      type: object
+      required: [id, summary]
+      properties:
+        id:
+          type: string
+        summary:
+          type: string
+          description: Learner-safe statement of the misunderstanding being repaired. Never reveals the rubric's correction.
+
+    TurnEnvelope:
+      type: object
+      required:
+        - turn_number
+        - learner_transcript
+        - student_text
+        - progress
+        - newly_covered_points
+        - active_misconception
+        - learner_turn_count
+        - turns_remaining
+        - status
+        - end_reason
+        - report
+      properties:
+        turn_number:
+          type: integer
+          minimum: 1
+          maximum: 8
+        learner_transcript:
+          type: string
+          description: The learner text that was judged (echo of the submission).
+        student_text:
+          type: string
+          minLength: 1
+          description: The AI Student's follow-up question or plausible misunderstanding. Fetch its audio at this turn_number.
+        progress:
+          $ref: "#/components/schemas/Progress"
+        newly_covered_points:
+          type: array
+          description: Rubric points confirmed on this turn only.
+          items:
+            $ref: "#/components/schemas/RubricPointRef"
+        active_misconception:
+          anyOf:
+            - $ref: "#/components/schemas/ActiveMisconception"
+            - type: "null"
+        learner_turn_count:
+          type: integer
+          minimum: 1
+          maximum: 8
+        turns_remaining:
+          type: integer
+          minimum: 0
+          maximum: 7
+        status:
+          $ref: "#/components/schemas/SessionStatus"
+        end_reason:
+          anyOf:
+            - $ref: "#/components/schemas/EndReason"
+            - type: "null"
+          description: Null while active. `mastery` or `turn_limit` when this turn ended the session.
+        report:
+          anyOf:
+            - $ref: "#/components/schemas/TeacherReport"
+            - type: "null"
+          description: Null while active; fully populated in the same envelope when the session ends.
+
+    SessionFinished:
+      type: object
+      required: [session_id, status, end_reason, progress, report]
+      properties:
+        session_id:
+          type: string
+        status:
+          type: string
+          const: ended
+        end_reason:
+          $ref: "#/components/schemas/EndReason"
+        progress:
+          $ref: "#/components/schemas/Progress"
+        report:
+          $ref: "#/components/schemas/TeacherReport"
+
+    TeacherReport:
+      type: object
+      required:
+        - final_percent
+        - explained_well
+        - misconceptions_corrected
+        - gaps_and_accidental_implications
+        - improvement_suggestion
+        - recommended_next_concept
+        - mastery_achieved
+      properties:
+        final_percent:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: Equals the session's final computed progress; never recomputed.
+        explained_well:
+          type: array
+          items: { type: string }
+          description: Grounded in this session's Judge evaluations only. May be empty.
+        misconceptions_corrected:
+          type: array
+          items: { type: string }
+        gaps_and_accidental_implications:
+          type: array
+          items: { type: string }
+        improvement_suggestion:
+          type: string
+          minLength: 1
+          description: Exactly one concrete, actionable suggestion. Always present, even at 0%.
+        recommended_next_concept:
+          $ref: "#/components/schemas/ConceptRef"
+        mastery_achieved:
+          type: boolean
+          description: True if and only if final_percent is 100. Drives the accomplishment animation client-side.
+
+    Transcription:
+      type: object
+      required: [transcript]
+      properties:
+        transcript:
+          type: string
+
+    ErrorCode:
+      type: string
+      enum:
+        - INVALID_CONCEPT
+        - INVALID_MODE
+        - EMPTY_SUBMISSION
+        - SESSION_NOT_FOUND
+        - TURN_NOT_FOUND
+        - SESSION_ENDED
+        - TRANSCRIPTION_FAILED
+        - GENERATION_FAILED
+        - SPEECH_FAILED
+        - UPLOAD_TOO_LARGE
+        - UNSUPPORTED_AUDIO_TYPE
+        - DB_UNAVAILABLE
+        - VALIDATION_FAILED
+      description: |
+        Provider-neutral error codes. `VALIDATION_FAILED` is the fallback for
+        request-shape errors not covered by a more specific code.
+
+    ErrorEnvelope:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              $ref: "#/components/schemas/ErrorCode"
+            message:
+              type: string
+              description: Human-readable, provider-neutral. Never names a vendor, model, upstream status, or upstream error text.

@@ -39,7 +39,7 @@ The learner sees a non-decreasing session progress bar. A concept reaches 100% o
 17. As a learner, I want to opt into voice input, so that I can practise explaining a concept aloud.
 18. As a learner, I want push-to-talk voice capture, so that I control exactly when recording begins and ends.
 19. As a learner, I want to switch between text and voice at any turn, so that one input choice does not constrain the entire session.
-20. As a learner, I want to see and edit a voice transcript before submitting it, so that recognition errors are not judged as knowledge gaps.
+20. As a learner, I want my speech transcribed and submitted as my explanation without a manual review step, so that voice teaching feels natural and uninterrupted.
 21. As a learner, I want text input to remain available when transcription fails, so that a voice-provider problem does not end the session.
 22. As a learner, I want every AI Student reply to be spoken, so that voice output is a real part of the MVP rather than an optional demo extra.
 23. As a learner, I want the AI Student's words to remain visible while audio plays, so that I can read along or recover from an audio problem.
@@ -94,7 +94,7 @@ The learner sees a non-decreasing session progress bar. A concept reaches 100% o
 ### Curated machine-learning graph
 
 - The MVP contains exactly these 15 selectable Concepts: Dataset; Features and Labels; Model; Training vs. Inference; Supervised Learning; Unsupervised Learning; Neural Networks; Loss Function; Gradient Descent; Learning Rate; Overfitting; Regularization; Train/Validation/Test Split; Confusion Matrix; and Precision vs. Recall.
-- The graph and prerequisite edges are local, version-controlled curriculum data. The LLM does not add, delete, or reconnect nodes at runtime.
+- The Concept Catalog and prerequisite edges are backend-owned, version-controlled curriculum data exposed to the web application through the product API. The LLM does not add, delete, or reconnect nodes at runtime.
 - Prerequisite edges communicate recommended order but never lock a node.
 - Each node has one of three presentation states: Not Attempted at 0%, Developing from 1–99%, or Accomplished at 100%.
 - The browser stores the single demo learner's best score per Concept. There is no account, owner record, or cross-device synchronization.
@@ -125,11 +125,11 @@ The learner sees a non-decreasing session progress bar. A concept reaches 100% o
 
 - Text input is the default. Voice input is an advanced input mode that the learner may select when starting and enable or disable at any later turn.
 - Voice input is turn-based push-to-talk rather than a full-duplex real-time conversation.
-- ElevenLabs performs speech-to-text. The resulting transcript is visible and editable before it is submitted to the Judge.
+- ElevenLabs performs speech-to-text through a dedicated transcription endpoint. The resulting transcript is submitted directly as the learner's explanation through the ordinary text-turn contract and shown in the conversation; there is no manual review step.
 - If transcription fails, the product explains the failure without losing the current conversation and leaves text input ready for use.
-- Every successful AI Student reply is sent to ElevenLabs text-to-speech with one fixed default voice. Selecting a voice is not part of the MVP.
+- Every AI Student reply can be spoken: the client fetches speech for a reply from a dedicated endpoint that synthesizes the stored reply text on demand through ElevenLabs with one fixed default voice. Selecting a voice is not part of the MVP.
 - AI Student text is rendered before or alongside audio playback and remains visible.
-- The learner may mute or replay the current spoken reply. Muting does not remove text-to-speech from the underlying response flow.
+- The learner may mute or replay the current spoken reply. Muting simply skips fetching synthesis for a reply; replay reuses client-cached audio where available.
 - A speech-synthesis failure shows a non-blocking error and leaves the text reply usable for the next turn.
 - Raw input recordings and generated audio are transient. They are not stored in MongoDB or browser persistence.
 - DeutschlandGPT and ElevenLabs credentials remain server-side and are read from environment configuration.
@@ -154,19 +154,18 @@ The learner sees a non-decreasing session progress bar. A concept reaches 100% o
 ### API behavior
 
 - The web app can fetch the Concept catalog and prerequisite graph without invoking an LLM.
-- Starting a Teaching Session accepts a Concept identifier and AI Student mode and returns a session identifier plus the opening AI Student text and speech result.
-- Submitting a text turn accepts the session identifier and learner text. Submitting a voice turn first transcribes audio, allows client-side correction, and then uses the same text-turn contract.
-- A completed Teaching Turn returns AI Student text, playable speech output, current progress, newly covered points suitable for display, active misconception, turn count, and session status.
+- Starting a Teaching Session accepts a Concept identifier and AI Student mode and returns a session identifier plus the opening AI Student text; speech for any AI Student reply is synthesized on demand from a dedicated speech endpoint.
+- Submitting a text turn accepts the session identifier and learner text. Submitting a voice turn first transcribes audio through the transcription endpoint and then submits the transcript through the same text-turn contract.
+- A completed Teaching Turn returns AI Student text, current progress, newly covered points suitable for display, active misconception, turn count, and session status.
 - Finishing a Teaching Session returns the Teacher Report and final progress whether completion was automatic, manual, or caused by the turn limit.
 - Invalid Concept identifiers, modes, lifecycle transitions, and empty submissions are rejected at the API boundary.
-- A retry must not create duplicate persisted turns or double-count progress.
 - Provider failures are mapped to safe, provider-neutral errors. Secret values, raw upstream payloads, and internal Judge instructions are never returned to the browser.
 
 ### Primary acceptance scenario
 
 - A presenter selects Gradient Descent and one AI Student mode.
 - The AI Student asks the first, mode-appropriate question and speaks it using the default ElevenLabs voice.
-- The learner answers through voice; ElevenLabs transcribes the answer; the learner reviews and submits the transcript.
+- The learner answers through voice; ElevenLabs transcribes the answer; the transcript is submitted as the learner's explanation and appears in the conversation.
 - The Judge evaluates the answer, the progress bar advances, and the AI Student speaks a targeted misconception or follow-up.
 - The learner corrects the misconception and covers every remaining rubric point within eight turns.
 - Progress reaches 100%, the accomplishment animation plays, and the Teacher Report is shown.
@@ -177,7 +176,7 @@ The learner sees a non-decreasing session progress bar. A concept reaches 100% o
 
 - Tests assert externally observable behavior and stable contracts rather than exact prompts, private helper calls, or verbatim model wording.
 - The primary automated seam is the session API boundary. A test starts a session, submits learner transcripts, finishes the session, and reads the stored result using fake DeutschlandGPT and ElevenLabs adapters plus a test repository.
-- Session API tests verify the opening question, ordered Judge-before-Student loop, structured progress, monotonic coverage, misconception completion gate, eight-turn limit, manual finish, report production, safe provider failures, idempotent retry behavior, and persisted turn evidence.
+- Session API tests verify the opening question, ordered Judge-before-Student loop, structured progress, monotonic coverage, misconception completion gate, eight-turn limit, manual finish, report production, safe provider failures, and persisted turn evidence.
 - Existing FastAPI route tests with dependency overrides are the prior art for exercising HTTP behavior without live infrastructure.
 - Existing conversation repository tests are the prior art for validating persistence separately against a real test MongoDB when one is available.
 - One browser-level golden-path test covers Knowledge Graph selection, the AI Student's opening question, a typed fallback teaching loop, 100% completion, animation state, Teacher Report, and updated local Mastery.

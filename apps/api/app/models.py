@@ -28,7 +28,7 @@ class StoredMessage(BaseModel):
 
 
 class Conversation(BaseModel):
-    """A teaching session: its message history plus bookkeeping."""
+    """A generic persisted conversation: its message history plus bookkeeping."""
 
     id: str
     title: str | None = None

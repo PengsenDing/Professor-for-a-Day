@@ -47,24 +47,26 @@ Terms follow `docs/mvp-spec.md` §Product vocabulary. Additional backend-only te
 
 ---
 
-## 3. Contract assumptions
+## 3. Contract
 
-The spec fixes behavior but not routes or field names. These criteria assume the contract
-below. If the team prefers different names, change them here first — the criteria are
-written against these identifiers.
+The contract is no longer assumed — it is frozen in **`packages/shared/openapi.yaml`**,
+the authoritative agreement per ADR-0001. Where a criterion below disagrees with the
+OpenAPI document, the OpenAPI document wins. §3.5 lists the criteria this supersedes.
 
 ### 3.1 Routes
 
 | Method | Path | Purpose |
 | --- | --- | --- |
 | `GET` | `/api/curriculum` | Concept catalog + prerequisite edges (no LLM) |
-| `POST` | `/api/sessions` | Start a Teaching Session; returns opening question + speech |
-| `GET` | `/api/sessions/{session_id}` | Read current session state (no LLM) |
-| `POST` | `/api/sessions/{session_id}/turns` | Submit a learner explanation; returns the turn envelope |
-| `POST` | `/api/sessions/{session_id}/finish` | End early; returns the Teacher Report |
-| `POST` | `/api/speech/transcriptions` | Audio → editable transcript |
+| `POST` | `/api/sessions` | Start a Teaching Session; returns the opening question (text) |
+| `POST` | `/api/sessions/{session_id}/turns` | Submit a learner explanation (JSON text only); returns the turn envelope |
+| `GET` | `/api/sessions/{session_id}/turns/{turn_number}/speech` | Synthesize speech for one AI Student reply on demand (`turn_number` 0 = opening question) |
+| `POST` | `/api/sessions/{session_id}/finish` | End early; returns the Teacher Report (idempotent) |
+| `POST` | `/api/speech/transcriptions` | Audio → transcript; touches nothing else |
 
-Existing `/health`, `/api/chat`, and `/api/conversations` remain unchanged.
+There is **no** `GET /api/sessions/{session_id}`: a mid-session browser refresh loses the
+session by design. Existing `/health`, `/api/chat`, and `/api/conversations` remain
+unchanged but are outside the product contract.
 
 ### 3.2 Enumerations
 
@@ -75,15 +77,35 @@ Existing `/health`, `/api/chat`, and `/api/conversations` remain unchanged.
 
 ### 3.3 Speech transport
 
-Generated audio is returned inline as base64 in the JSON response
-(`speech.audio_base64`, `speech.mime_type`, `speech.available`). No audio file is written to
-disk, cached, or persisted. If the team switches to a short-lived URL instead, AC-TTS-5 and
-AC-SEC-4 must be re-checked against the new transport.
+Speech is **synthesized on fetch** (ADR-0003). JSON responses carry no audio and no
+`speech` object. The client fetches `GET .../turns/{turn_number}/speech`, which
+synthesizes the stored `student_text` with the fixed default voice and returns
+`audio/mpeg`. Nothing is cached or persisted server-side; clients cache blobs for replay.
+Voice input is two-step and non-editable: transcribe via `/api/speech/transcriptions`,
+then submit the transcript through the ordinary turn contract with `input_mode: "voice"`.
 
 ### 3.4 Idempotency
 
 Turn submissions carry a client-generated `client_turn_id` (UUID) in the request body.
 Retries reuse the same value.
+
+### 3.5 Error envelope and superseded criteria
+
+Domain and provider errors use `{"error": {"code": "<ENUM>", "message": "<text>"}}` with
+the provider-neutral code enum defined in the OpenAPI document. Status mapping (AC-ERR-2)
+is unchanged, plus `413`/`415` for oversized/unsupported transcription uploads.
+
+Superseded by the frozen contract (read them through the OpenAPI document):
+
+- **AC-SES-1, AC-SES-9, AC-TRN-1, AC-TTS-1, AC-TTS-2, AC-TTS-4, AC-TTS-6** — no `speech`
+  object in envelopes; the TTS behavior they describe now applies to the speech endpoint
+  (synthesis failure = `502 SPEECH_FAILED` there, never blocking session or text flow).
+- **AC-SES-7, AC-SES-10** — `GET /api/sessions/{id}` does not exist; persistence-before-
+  response is asserted through the repository instead.
+- **AC-CFG-4** — the `503` body is the error envelope with code `DB_UNAVAILABLE`, not a
+  `detail` object.
+- **AC-STT-1** — the transcript is not user-editable; the flow is voice-native
+  (spec user story 20 was amended accordingly).
 
 ---
 
