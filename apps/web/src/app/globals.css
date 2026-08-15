@@ -994,3 +994,150 @@
     opacity: 1;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   Report score sphere (components/report-score-sphere.tsx)
+   Scoped under .rss. The Teacher Report's score shown the way the knowledge
+   graph shows Mastery: a glass ball whose water level is the session's final
+   percent. Water is the graph's teal; at 100% the ball glows green. */
+
+.rss {
+  --rss-water: oklch(0.78 0.1 205);
+  --rss-green: oklch(0.72 0.17 155);
+  /* Set inline by the component: how far the water sits below full. */
+  --rss-level: 100%;
+}
+
+@keyframes rss-bob {
+  from { transform: translateY(var(--rss-level)); }
+  to { transform: translateY(calc(var(--rss-level) - 2.5%)); }
+}
+/* Mastery heartbeat: the whole shadow stack restated per frame, box-shadow
+   animates as one list (same trick as sts-halo). */
+@keyframes rss-halo {
+  0%, 100% {
+    box-shadow:
+      inset 0 -20px 32px -14px color-mix(in oklab, var(--rss-green) 38%, transparent),
+      inset 0 14px 24px -12px color-mix(in oklab, white 75%, transparent),
+      0 0 0 5px color-mix(in oklab, var(--rss-green) 22%, transparent),
+      0 0 40px 6px color-mix(in oklab, var(--rss-green) 38%, transparent);
+  }
+  50% {
+    box-shadow:
+      inset 0 -20px 32px -14px color-mix(in oklab, var(--rss-green) 46%, transparent),
+      inset 0 14px 24px -12px color-mix(in oklab, white 75%, transparent),
+      0 0 0 8px color-mix(in oklab, var(--rss-green) 30%, transparent),
+      0 0 72px 16px color-mix(in oklab, var(--rss-green) 58%, transparent);
+  }
+}
+
+/* The same glass as the start-teaching sphere, sized up. */
+.rss .rss-shell {
+  border: 1px solid color-mix(in oklab, var(--foreground) 14%, transparent);
+  background:
+    radial-gradient(circle at 32% 26%, color-mix(in oklab, white 92%, transparent) 0%, color-mix(in oklab, white 30%, transparent) 16%, transparent 45%),
+    radial-gradient(circle at 68% 82%, color-mix(in oklab, var(--foreground) 10%, transparent) 0%, transparent 55%),
+    color-mix(in oklab, var(--muted) 20%, transparent);
+  box-shadow:
+    inset 0 -20px 32px -14px color-mix(in oklab, var(--foreground) 28%, transparent),
+    inset 0 14px 24px -12px color-mix(in oklab, white 75%, transparent),
+    0 18px 38px -18px color-mix(in oklab, var(--foreground) 55%, transparent);
+}
+
+/* The water: the graph's teal, resting at the score line with a gentle bob.
+   The layer itself is invisible; the liquid is two slowly counter-rotating,
+   slightly-squashed discs whose rims cross the waterline — the rims read as
+   rolling waves, so the surface undulates like real water in a ball. */
+.rss .rss-water {
+  transform: translateY(var(--rss-level));
+  animation: rss-bob 3.2s ease-in-out infinite alternate;
+}
+@keyframes rss-wave {
+  from { transform: translateX(-50%) rotate(0deg); }
+  to { transform: translateX(-50%) rotate(360deg); }
+}
+/* Each disc hangs from the waterline (its body fills everything below);
+   rotating it swings its not-quite-round top edge through the line, which
+   reads as a rolling wave. The slight upward bias keeps the surface
+   oscillating around the score line rather than under it. */
+.rss .rss-water::before,
+.rss .rss-water::after {
+  content: "";
+  position: absolute;
+  top: -2%;
+  left: 50%;
+  width: 215%;
+  aspect-ratio: 1;
+  transform: translateX(-50%);
+  animation: rss-wave 9s linear infinite;
+}
+.rss .rss-water::before {
+  border-radius: 47% 48% 46% 48%;
+  background: color-mix(in oklab, var(--rss-water) 52%, transparent);
+}
+.rss .rss-water::after {
+  top: -1%;
+  border-radius: 48% 46% 48% 47%;
+  background: color-mix(in oklab, var(--rss-water) 32%, transparent);
+  animation-duration: 13s;
+  animation-direction: reverse;
+}
+
+/* 100%: the water turns the mastery green and the shell glows. */
+.rss[data-mastery] .rss-water::before {
+  background: color-mix(in oklab, var(--rss-green) 42%, transparent);
+}
+.rss[data-mastery] .rss-water::after {
+  background: color-mix(in oklab, var(--rss-green) 26%, transparent);
+}
+.rss[data-mastery] .rss-shell {
+  border-color: color-mix(in oklab, var(--rss-green) 60%, transparent);
+  animation: rss-halo 2.2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rss .rss-water,
+  .rss .rss-water::before,
+  .rss .rss-water::after {
+    animation: none !important;
+  }
+  .rss[data-mastery] .rss-shell {
+    animation: none !important;
+    box-shadow:
+      inset 0 -20px 32px -14px color-mix(in oklab, var(--rss-green) 40%, transparent),
+      inset 0 14px 24px -12px color-mix(in oklab, white 75%, transparent),
+      0 0 0 6px color-mix(in oklab, var(--rss-green) 25%, transparent),
+      0 0 48px 8px color-mix(in oklab, var(--rss-green) 45%, transparent);
+  }
+}
+
+/* Floating: the ball drifts like the start-teaching sphere while a soft
+   ground shadow beneath shrinks as it rises, selling the hover. */
+@keyframes rss-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-9px); }
+}
+@keyframes rss-ground {
+  0%, 100% { transform: translateX(-50%) scaleX(1); opacity: 0.5; }
+  50% { transform: translateX(-50%) scaleX(0.78); opacity: 0.3; }
+}
+.rss-float { animation: rss-float 4.5s ease-in-out infinite; }
+.rss-ground {
+  height: 12px;
+  background: radial-gradient(
+    ellipse at center,
+    color-mix(in oklab, var(--foreground) 22%, transparent) 0%,
+    transparent 70%
+  );
+  filter: blur(3px);
+  animation: rss-ground 4.5s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rss-float { animation: none !important; }
+  .rss-ground {
+    animation: none !important;
+    transform: translateX(-50%);
+    opacity: 0.4;
+  }
+}

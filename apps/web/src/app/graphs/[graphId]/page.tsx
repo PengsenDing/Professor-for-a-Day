@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, RotateCcw } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -31,8 +31,21 @@ type Step = 1 | 2;
 const ADVANCE_DELAY_MS = 450;
 
 export default function GraphPage() {
+  // useSearchParams needs a Suspense boundary for prerendering.
+  return (
+    <Suspense fallback={null}>
+      <GraphPageInner />
+    </Suspense>
+  );
+}
+
+function GraphPageInner() {
   const router = useRouter();
   const { graphId } = useParams<{ graphId: string }>();
+  // When the report page links here it passes its session id: the graph is
+  // then shown view-only — explore the web, start nothing — with a way back.
+  const reportSessionId = useSearchParams().get("report");
+  const viewOnly = reportSessionId !== null;
 
   const [curriculum, setCurriculum] = useState<Curriculum | null>(null);
   const [mastery, setMastery] = useState<Record<string, number>>({});
@@ -103,6 +116,7 @@ export default function GraphPage() {
   }
 
   function selectConcept(id: string) {
+    if (viewOnly) return; // just looking — a click never starts the setup flow
     setConceptId(id);
     // Let the selection highlight land, then glide to step 2.
     if (advanceTimer.current !== null) clearTimeout(advanceTimer.current);
@@ -147,6 +161,17 @@ export default function GraphPage() {
     <>
       {/* Above the full-viewport graph canvas (z-0). The way back to the
           graph picker is the first progress dot below. */}
+      {viewOnly && (
+        <Button
+          variant="outline"
+          size="sm"
+          className="fixed top-3 left-3 z-10"
+          nativeButton={false}
+          render={<Link href={`/session/${reportSessionId}/report`} />}
+        >
+          <ArrowLeft className="size-4" /> Back to report
+        </Button>
+      )}
       <ThemeToggle className="fixed top-3 right-3 z-10" />
       {/* On lg+ screens the whole step fits the viewport (no page scroll);
           smaller screens keep their natural vertical scroll. */}
@@ -201,9 +226,13 @@ export default function GraphPage() {
                 onSelect={selectConcept}
               />
             )}
-            <p className="pb-1 text-center text-xs text-muted-foreground">
-              Pick a concept to teach
-            </p>
+            {/* View mode shows no caption: the 3D scene's own hint bar
+                already says how to drag/rotate/zoom. */}
+            {!viewOnly && (
+              <p className="pb-1 text-center text-xs text-muted-foreground">
+                Pick a concept to teach
+              </p>
+            )}
           </section>
         ) : (
           <section
@@ -257,23 +286,27 @@ export default function GraphPage() {
         )}
       </main>
 
-      <SetupStepDots
-        steps={[
-          {
-            label: "Pick a graph",
-            onClick: () => {
-              if (!pending) router.push("/");
+      {/* The setup flow's dots make no sense while just viewing the graph
+          from a report — the only navigation there is "Back to report". */}
+      {!viewOnly && (
+        <SetupStepDots
+          steps={[
+            {
+              label: "Pick a graph",
+              onClick: () => {
+                if (!pending) router.push("/");
+              },
             },
-          },
-          { label: "Pick a concept", active: step === 1, onClick: () => goTo(1) },
-          {
-            label: "Pick a student",
-            active: step === 2,
-            disabled: !conceptId,
-            onClick: () => goTo(2),
-          },
-        ]}
-      />
+            { label: "Pick a concept", active: step === 1, onClick: () => goTo(1) },
+            {
+              label: "Pick a student",
+              active: step === 2,
+              disabled: !conceptId,
+              onClick: () => goTo(2),
+            },
+          ]}
+        />
+      )}
     </>
   );
 }

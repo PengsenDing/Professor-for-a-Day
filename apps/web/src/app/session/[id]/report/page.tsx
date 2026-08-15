@@ -8,12 +8,10 @@ import {
   ArrowLeft,
   ArrowRight,
   GitBranch,
-  GraduationCap,
   Lightbulb,
   RotateCcw,
   ShieldCheck,
   Sparkles,
-  Trophy,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -24,8 +22,8 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ReportScoreSphere } from "@/components/report-score-sphere";
 import { finishSession } from "@/lib/api";
 import {
   applyFinished,
@@ -142,7 +140,7 @@ export default function ReportPage() {
 
   return (
     <main className="mx-auto w-full max-w-3xl flex-1 space-y-4 p-4 pb-12">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center">
         <Button
           variant="ghost"
           size="sm"
@@ -151,14 +149,58 @@ export default function ReportPage() {
         >
           <ArrowLeft className="size-4" /> Back to session
         </Button>
-        <Button
-          size="sm"
-          nativeButton={false}
-          render={<Link href={graphId ? `/graphs/${graphId}` : "/"} />}
-        >
-          <GraduationCap className="size-4" /> Knowledge graph
-        </Button>
       </div>
+
+      {/* The score leads, frameless — the ball floats free on the page;
+          right under it sits the one way to look at the knowledge graph
+          (view-only, with a "Back to report" return). */}
+      <Card className="border-none bg-transparent shadow-none">
+        <CardContent className="flex flex-col items-center gap-4 py-6 text-center">
+          {/* "Teacher Report" caps the concept being taught; below them the
+              floating ball's water level is the score, the way the knowledge
+              graph shows Mastery; the number sits below the ball. */}
+          <div className="space-y-1">
+            <p className="text-xs font-medium uppercase tracking-[0.2em] text-muted-foreground">
+              Teacher Report
+            </p>
+            {conceptTitle && (
+              <h1 className="text-2xl font-semibold tracking-tight">
+                {conceptTitle}
+              </h1>
+            )}
+          </div>
+          <ReportScoreSphere percent={report.final_percent} />
+          <p className="text-5xl font-semibold tabular-nums tracking-tight">
+            {report.final_percent}
+            <span className="text-2xl text-muted-foreground">%</span>
+          </p>
+          <p className="max-w-md text-sm text-muted-foreground">
+            {report.mastery_achieved
+              ? "Accomplished! Your student walked away with a complete, corrected mental model."
+              : report.final_percent >= 50
+                ? "Good progress — a few rubric points or an open misconception still need your attention."
+                : "A rough first lesson — check the gaps below and try another round."}
+          </p>
+          {(graphUpdate || graphId) && (
+            <Button
+              className="mt-1"
+              nativeButton={false}
+              render={
+                // ?report= opens the graph view-only (no setup flow) with a
+                // "Back to report" button that returns here.
+                <Link
+                  href={`/graphs/${graphUpdate?.graph_id ?? graphId}?report=${id}`}
+                />
+              }
+            >
+              <GitBranch className="size-4" />
+              {graphUpdate?.created
+                ? "Explore your new knowledge graph"
+                : "See the knowledge graph"}
+            </Button>
+          )}
+        </CardContent>
+      </Card>
 
       {graphUpdate && (
         <Card className="gap-3 border-primary/40 py-4">
@@ -170,7 +212,7 @@ export default function ReportPage() {
                 : "Your knowledge graph grew"}
             </CardTitle>
           </CardHeader>
-          <CardContent className="flex flex-wrap items-center justify-between gap-3 px-4">
+          <CardContent className="px-4">
             <p className="text-sm">
               {graphUpdate.created ? (
                 <>
@@ -201,52 +243,9 @@ export default function ReportPage() {
                 </>
               )}
             </p>
-            <Button
-              size="sm"
-              nativeButton={false}
-              render={<Link href={`/graphs/${graphUpdate.graph_id}`} />}
-            >
-              {graphUpdate.created
-                ? "Explore your new knowledge graph"
-                : "See your updated graph"}{" "}
-              <ArrowRight className="size-3.5" />
-            </Button>
           </CardContent>
         </Card>
       )}
-
-      <Card
-        className={cn(
-          report.mastery_achieved &&
-            "border-emerald-500/50 bg-gradient-to-b from-emerald-50 to-transparent dark:from-emerald-500/10",
-        )}
-      >
-        <CardContent className="flex flex-col items-center gap-3 py-8 text-center">
-          <Trophy
-            className={cn(
-              "size-8 text-amber-500",
-              report.mastery_achieved && "size-10 animate-bounce",
-            )}
-          />
-          <div>
-            <p className="text-sm text-muted-foreground">
-              Teacher Report{conceptTitle ? ` · ${conceptTitle}` : ""}
-            </p>
-            <p className="text-5xl font-semibold tabular-nums tracking-tight">
-              {report.final_percent}
-              <span className="text-2xl text-muted-foreground">%</span>
-            </p>
-          </div>
-          <Progress value={report.final_percent} className="h-2 w-56" />
-          <p className="max-w-md text-sm text-muted-foreground">
-            {report.mastery_achieved
-              ? "Accomplished! Your student walked away with a complete, corrected mental model."
-              : report.final_percent >= 50
-                ? "Good progress — a few rubric points or an open misconception still need your attention."
-                : "A rough first lesson — check the gaps below and try another round."}
-          </p>
-        </CardContent>
-      </Card>
 
       {report.evidence?.length ? (
         <EvidenceSection evidence={report.evidence} />
