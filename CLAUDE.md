@@ -177,14 +177,6 @@ standard, so scores stay comparable across modes.
   follow-up question or plausible misunderstanding. It never reveals the rubric, Judge
   reasoning, or the correct answer, and its misconception originates from tracked
   state, not random role-play.
-- The **Student Critic** (`app/services/critic.py`, toggled by
-  `STUDENT_CRITIC_ENABLED`) is a third, hidden LLM role that reviews each generated
-  AI Student reply — after the deterministic guardrails — for answer-leakage and
-  directive fidelity. A violated verdict triggers exactly one evidence-fed
-  regeneration (never re-reviewed); critic failures fail open; verdicts (violations,
-  telemetry-only 0–1 score, regenerated flag) are persisted on the turn and never
-  surfaced to clients. Openings, farewells, and pre-authored fallback lines are
-  never reviewed. See AC-STU-7…10.
 
 ## 7. Engineering principles
 
@@ -235,8 +227,7 @@ LOG_LEVEL=
 JUDGE_TEMPERATURE=
 STUDENT_TEMPERATURE=
 JUDGE_REASONING_EFFORT=
-STUDENT_REASONING_EFFORT= 
-STUDENT_CRITIC_ENABLED=
+STUDENT_REASONING_EFFORT=
 ```
 
 ElevenLabs credentials likewise live server-side in environment configuration. Secrets
