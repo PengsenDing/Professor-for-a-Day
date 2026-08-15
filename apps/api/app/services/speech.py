@@ -35,10 +35,10 @@ class SpeechService:
             raise TranscriptionError("Transcription failed") from error
         return result.text
 
-    async def synthesize(self, text: str) -> bytes:
+    async def synthesize(self, text: str, mode: str | None = None) -> bytes:
         try:
             stream = self._client.text_to_speech.convert(
-                voice_id=self._settings.elevenlabs_voice_id,
+                voice_id=self._settings.voice_id_for_mode(mode),
                 model_id=self._settings.elevenlabs_tts_model,
                 text=text,
                 output_format="mp3_44100_128",

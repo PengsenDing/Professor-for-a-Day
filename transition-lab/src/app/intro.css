@@ -1,0 +1,204 @@
+:root {
+  /* Whiteboard intro palette */
+  --board-bg: #faf8f3;
+  --board-ink: #1a1a1a;
+  --board-ink-soft: #3d3d3d;
+  --board-gray: #8a8a86;
+
+  /* Kept for the Select Concept placeholder (dark theme) */
+  --intro-cyan: #22d3ee;
+  --intro-text: #f1f5f9;
+  --intro-text-dim: #94a3b8;
+
+  --ui-font:
+    -apple-system, "SF Pro Text", "Inter", "Segoe UI", system-ui, sans-serif;
+}
+
+body {
+  font-family: var(--ui-font);
+}
+
+/* ---------- Intro page layout ---------- */
+
+.intro-root {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: var(--board-bg);
+  color: var(--board-ink);
+}
+
+/* On exit, the board content drifts left and fades — calm, not dramatic. */
+.intro-stage {
+  position: absolute;
+  inset: 0;
+  transition:
+    opacity calc(var(--wipe-ms) * 0.9) ease,
+    transform calc(var(--wipe-ms) * 0.9) cubic-bezier(0.4, 0, 0.6, 1);
+}
+
+.intro-stage.is-leaving {
+  opacity: 0.25;
+  transform: translateX(-36px);
+}
+
+/* ---------- START button ---------- */
+
+.intro-actions {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: clamp(3rem, 9vh, 6rem);
+  display: flex;
+  justify-content: center;
+}
+
+.start-button {
+  cursor: pointer;
+  font-family: var(--ui-font);
+  font-size: clamp(0.95rem, 1.4vw, 1.2rem);
+  font-weight: 500;
+  letter-spacing: 0.38em;
+  text-indent: 0.38em; /* visually recenters letter-spaced text */
+  color: var(--board-ink);
+  background: var(--board-bg);
+  border: 1.5px solid var(--board-ink);
+  /* Asymmetric radii = the subtle hand-drawn wobble of the outline. */
+  border-radius: 42% 58% 55% 45% / 48% 44% 56% 52%;
+  padding: 1em 3em;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+
+  /* Hidden until the title is fully written. */
+  opacity: 0;
+  transform: translateY(10px);
+  pointer-events: none;
+  transition:
+    opacity 600ms ease,
+    transform 260ms ease,
+    background-color 200ms ease,
+    color 200ms ease,
+    border-color 200ms ease,
+    box-shadow 200ms ease;
+}
+
+.start-button.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+.start-button.is-visible:hover:not(:disabled),
+.start-button.is-visible:focus-visible {
+  transform: scale(var(--hover-scale));
+  background: #f1eee7;
+  border-color: #000000;
+  color: #000000;
+  box-shadow: 0 3px 14px rgba(0, 0, 0, 0.09);
+  outline: none;
+}
+
+.start-button.is-pressed {
+  transform: scale(var(--pressed-scale));
+  transition-duration: 120ms;
+  cursor: default;
+}
+
+/* ---------- Whiteboard wipe (exit transition) ---------- */
+
+.board-wipe {
+  position: absolute;
+  inset: 0;
+  background: var(--board-bg);
+  /* Soft leading edge, like a fresh sheet sliding over the board. */
+  box-shadow: 18px 0 42px rgba(0, 0, 0, 0.1);
+  transform: translateX(-104%);
+  pointer-events: none;
+  transition: transform var(--wipe-ms) cubic-bezier(0.65, 0, 0.35, 1);
+}
+
+.board-wipe.is-active {
+  transform: translateX(0);
+}
+
+/* ---------- Select Concept placeholder ---------- */
+
+.select-concept-root {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  background:
+    radial-gradient(ellipse 70% 55% at 50% 45%, #060c1f 0%, #010104 80%);
+  color: var(--intro-text);
+  text-align: center;
+  padding: 0 6vw;
+}
+
+.select-concept-root::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background: var(--board-bg);
+  pointer-events: none;
+  animation: board-fade-out 450ms ease-out both;
+}
+
+@keyframes board-fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+.select-concept-title {
+  margin: 0;
+  font-size: clamp(1.6rem, 3.2vw, 2.8rem);
+  letter-spacing: 0.14em;
+  text-indent: 0.14em;
+}
+
+.select-concept-hint {
+  margin: 0;
+  color: var(--intro-text-dim);
+  letter-spacing: 0.08em;
+}
+
+.select-concept-back {
+  margin-top: 1.5rem;
+  color: var(--intro-cyan);
+  letter-spacing: 0.12em;
+  text-decoration: none;
+  border-bottom: 1px solid rgba(34, 211, 238, 0.4);
+  padding-bottom: 2px;
+}
+
+/* ---------- Reduced motion ---------- */
+
+@media (prefers-reduced-motion: reduce) {
+  .intro-stage,
+  .start-button,
+  .board-wipe {
+    transition: none;
+  }
+
+  .intro-stage.is-leaving {
+    transform: none;
+    opacity: 1;
+    transition: opacity 150ms linear;
+  }
+
+  .board-wipe.is-active {
+    transform: translateX(0);
+    transition: opacity 150ms linear;
+  }
+
+  .select-concept-root::after {
+    animation: none;
+    opacity: 0;
+  }
+}

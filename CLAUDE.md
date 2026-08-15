@@ -23,7 +23,7 @@ Key product facts:
   (15 Concepts, version-controlled) plus user graphs created by teaching. Picking a
   graph leads to its concept-select view; "start a new knowledge graph" leads to a
   freeform topic session whose conversation is summarized into a new graph at session
-  end (ADR-0004). Prerequisite edges recommend an order but never lock a node.
+  end (ADR-0005). Prerequisite edges recommend an order but never lock a node.
 - User graphs are living: later sessions on them may append concepts/edges the
   conversation surfaced (append-only, validated, acyclic). The builtin graph never
   changes. User-graph concepts get rubrics generated on demand and cached in MongoDB.
@@ -59,7 +59,9 @@ This file is an orientation summary. When it disagrees with the documents below,
      version-controlled backend data; the LLM never adds, deletes, or rewires nodes).
    - 0003: speech is synthesized on fetch (no audio in JSON envelopes; clients fetch
      `audio/mpeg` per turn and cache the blob for replay).
-   - 0004: user knowledge graphs are LLM-drafted, application-validated, and
+   - 0004: sessions are resumable via `GET /api/sessions/{session_id}` (a learner-safe
+     `SessionSnapshot`; the web app stays localStorage-first and uses it as fallback).
+   - 0005: user knowledge graphs are LLM-drafted, application-validated, and
      append-only; ADR-0002 continues to hold for the builtin graph.
 
 ## 3. Repository layout and technology
@@ -109,8 +111,9 @@ GET  /health                                                # process + DB healt
 GET    /api/graphs                                          # all knowledge graphs (builtin first), no LLM call
 GET    /api/graphs/{graph_id}/curriculum                    # one graph's Concepts + edges, no LLM call
 DELETE /api/graphs/{graph_id}                               # delete a user graph; builtin -> 409 GRAPH_NOT_DELETABLE
-POST /api/sessions                                          # start a session -> opening question (turn 0);
+POST   /api/sessions                                        # start a session -> opening question (turn 0);
                                                             #   {graph_id, concept_id, mode} or freeform {topic, mode}
+GET    /api/sessions/{session_id}                           # learner-safe session snapshot (resume), no LLM call
 POST /api/sessions/{session_id}/turns                       # submit one learner explanation
 POST /api/sessions/{session_id}/finish                      # finish early -> Teacher Report (idempotent)
 GET  /api/sessions/{session_id}/turns/{turn_number}/speech  # synthesize one AI Student reply (audio/mpeg)
@@ -122,6 +125,11 @@ contract; the stateless chat behavior is not the Teaching Session contract.
 
 Contract behaviors to preserve:
 
+- **The session snapshot is a learner-safe projection** (ADR-0004). `GET
+  /api/sessions/{session_id}` never invokes a provider, never mutates the session, and
+  never exposes the persisted Judge evaluation, probe recommendations, or rubric
+  internals. The web app is localStorage-first and fetches the snapshot only when no
+  local copy exists.
 - **Turns are text-only JSON.** A voice turn is transcribed first via
   `POST /api/speech/transcriptions`, then submitted through the ordinary turn contract
   with `input_mode: "voice"`. Transcription touches nothing else — no turn, no session
@@ -152,9 +160,11 @@ document. Notable fields: the envelope carries `progress.percent`, per-turn
 `newly_covered_points`, the learner-safe `active_misconception`, `learner_turn_count` /
 `turns_remaining`, `status`, `end_reason`, and the `report`. The `TeacherReport`
 contains `final_percent` (equal to the session's final computed progress, never
-recomputed), `explained_well`, `misconceptions_corrected`,
-`gaps_and_accidental_implications`, exactly one `improvement_suggestion`,
-`recommended_next_concept`, and `mastery_achieved` (true iff `final_percent` is 100).
+recomputed), `explained_well`, `evidence` (why each point scored: per confirmed point,
+the learner's own words when the Judge's evidence was a verbatim quote, else no quote),
+`misconceptions_corrected`, `gaps_and_accidental_implications`, exactly one
+`improvement_suggestion`, `recommended_next_concept`, and `mastery_achieved` (true iff
+`final_percent` is 100).
 
 ## 5. AI Student modes
 
@@ -217,7 +227,7 @@ standard, so scores stay comparable across modes.
   transcript, input mode, AI Student text, the Judge's structured evaluation,
   resulting progress, and a timestamp — so score changes can be traced to evidence.
 - MongoDB also stores user knowledge graphs (`knowledge_graphs`): title, version,
-  concepts (each with an optional cached generated rubric), and edges (ADR-0004).
+  concepts (each with an optional cached generated rubric), and edges (ADR-0005).
   Rubric internals never appear in any API response.
 - MongoDB never stores raw or generated audio, browser-local Mastery, credentials, or
   hidden provider payloads unnecessary for the learning record.
@@ -284,7 +294,7 @@ Follow `docs/mvp-spec.md` §Testing Decisions and `docs/backend-acceptance-crite
 ## 11. Out of scope for the MVP
 
 Accounts and authentication; multiple users or cross-device sync; LLM changes to the
-builtin ML graph (user graphs are LLM-drafted within the guardrails of ADR-0004); a
+builtin ML graph (user graphs are LLM-drafted within the guardrails of ADR-0005); a
 graph database or server-side Mastery storage; hard prerequisite locks; graph
 management beyond deleting a user graph (renaming, editing, merging, export);
 languages other than English;

@@ -33,7 +33,11 @@ import {
   recordMastery,
   saveStoredSession,
 } from "@/lib/session-store";
-import type { GraphUpdate, TeacherReport } from "@/lib/types";
+import type {
+  DemonstratedEvidence,
+  GraphUpdate,
+  TeacherReport,
+} from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 export default function ReportPage() {
@@ -244,13 +248,18 @@ export default function ReportPage() {
         </CardContent>
       </Card>
 
-      <ReportSection
-        icon={Sparkles}
-        iconClass="text-violet-500"
-        title="What you explained well"
-        items={report.explained_well}
-        empty="No rubric points were confirmed this session."
-      />
+      {report.evidence?.length ? (
+        <EvidenceSection evidence={report.evidence} />
+      ) : (
+        // Reports stored before the evidence field existed fall back to labels.
+        <ReportSection
+          icon={Sparkles}
+          iconClass="text-violet-500"
+          title="What you explained well"
+          items={report.explained_well}
+          empty="No rubric points were confirmed this session."
+        />
+      )}
       <ReportSection
         icon={ShieldCheck}
         iconClass="text-emerald-600"
@@ -305,6 +314,43 @@ export default function ReportPage() {
         </Card>
       )}
     </main>
+  );
+}
+
+/** Why each point scored: the point, and the learner's own words that earned it. */
+function EvidenceSection({ evidence }: { evidence: DemonstratedEvidence[] }) {
+  return (
+    <Card className="gap-3 py-4">
+      <CardHeader className="px-4">
+        <CardTitle className="flex items-center gap-2 text-sm font-semibold">
+          <Sparkles className="size-4 text-violet-500" />
+          What you explained well — and the words that proved it
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="px-4">
+        <ul className="space-y-3 text-sm">
+          {evidence.map((item) => (
+            <li key={item.point.id} className="flex items-start gap-2">
+              <span className="mt-2 size-1 shrink-0 rounded-full bg-muted-foreground/50" />
+              <div className="space-y-1">
+                <p>{item.point.label}</p>
+                {item.quote ? (
+                  <blockquote className="border-l-2 border-violet-500/40 pl-2 text-muted-foreground">
+                    <span className="italic">&ldquo;{item.quote}&rdquo;</span>
+                    {" — you, turn "}
+                    {item.turn_number}
+                  </blockquote>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    Demonstrated in turn {item.turn_number}.
+                  </p>
+                )}
+              </div>
+            </li>
+          ))}
+        </ul>
+      </CardContent>
+    </Card>
   );
 }
 

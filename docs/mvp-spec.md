@@ -14,7 +14,7 @@ The current repository provides a FastAPI and LangChain backend, a DeutschlandGP
 
 Build an English-language, single-learner hackathon experience focused on 15 curated machine-learning concepts. The Home screen presents a prerequisite knowledge graph and the learner's best mastery score for each concept. The learner selects any concept and one of three AI Student modes: Beginner, Confident, or Skeptic.
 
-The AI Student starts the session with a question suited to the concept and selected mode. The learner teaches through text or push-to-talk voice input and may switch input mode at any turn. ElevenLabs transcribes voice input. A hidden Judge evaluates each submitted explanation against a stable, pre-authored Concept Rubric. The Judge identifies demonstrated rubric points, corrected or unresolved misconceptions, and the best next probe. A separate AI Student call then produces the next question or misunderstanding. Every AI Student reply remains visible as text and is also spoken through ElevenLabs using one fixed default voice.
+The AI Student starts the session with a question suited to the concept and selected mode. The learner teaches through text or push-to-talk voice input and may switch input mode at any turn. ElevenLabs transcribes voice input. A hidden Judge evaluates each submitted explanation against a stable, pre-authored Concept Rubric. The Judge identifies demonstrated rubric points, corrected or unresolved misconceptions, and the best next probe. A separate AI Student call then produces the next question or misunderstanding. Every AI Student reply remains visible as text and is also spoken through ElevenLabs, using one fixed server-configured voice per AI Student mode.
 
 The learner sees a non-decreasing session progress bar. A concept reaches 100% only after every required rubric point has been demonstrated and the required misconception challenge has been resolved. At 100%, the interface plays an accomplishment animation. A session also may end when the learner chooses Finish or after eight learner turns. Every ending produces a Teacher Report and updates the browser-local mastery state when the new score exceeds the learner's previous best. Anonymous conversations and Judge evaluations are stored in MongoDB, while raw recordings are discarded after transcription.
 
@@ -127,7 +127,7 @@ The learner sees a non-decreasing session progress bar. A concept reaches 100% o
 - Voice input is turn-based push-to-talk rather than a full-duplex real-time conversation.
 - ElevenLabs performs speech-to-text through a dedicated transcription endpoint. The resulting transcript is submitted directly as the learner's explanation through the ordinary text-turn contract and shown in the conversation; there is no manual review step.
 - If transcription fails, the product explains the failure without losing the current conversation and leaves text input ready for use.
-- Every AI Student reply can be spoken: the client fetches speech for a reply from a dedicated endpoint that synthesizes the stored reply text on demand through ElevenLabs with one fixed default voice. Selecting a voice is not part of the MVP.
+- Every AI Student reply can be spoken: the client fetches speech for a reply from a dedicated endpoint that synthesizes the stored reply text on demand through ElevenLabs. Each AI Student mode speaks with its own fixed, server-configured voice character; learner-facing voice selection is not part of the MVP.
 - AI Student text is rendered before or alongside audio playback and remains visible.
 - The learner may mute or replay the current spoken reply. Muting simply skips fetching synthesis for a reply; replay reuses client-cached audio where available.
 - A speech-synthesis failure shows a non-blocking error and leaves the text reply usable for the next turn.
@@ -213,7 +213,7 @@ The learner sees a non-decreasing session progress bar. A concept reaches 100% o
 
 ## Addendum (2026-08): Multiple Knowledge Graphs
 
-The single fixed Knowledge Graph became one of several (see ADR-0004 and
+The single fixed Knowledge Graph became one of several (see ADR-0005 and
 `packages/shared/openapi.yaml`):
 
 - A landing page lists every knowledge graph — the builtin Machine Learning graph plus

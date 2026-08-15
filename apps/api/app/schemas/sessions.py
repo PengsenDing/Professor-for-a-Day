@@ -1,5 +1,6 @@
 """Teaching Session contract schemas: lifecycle, turn envelope, Teacher Report."""
 
+from datetime import datetime
 from enum import StrEnum
 from typing import Annotated, Literal
 from uuid import UUID
@@ -135,12 +136,38 @@ class ActiveMisconception(BaseModel):
     )
 
 
+class DemonstratedEvidence(BaseModel):
+    """Why one rubric point was scored: the learner's own words, or nothing.
+
+    `quote` is surfaced only when the Judge's recorded evidence is a verbatim
+    substring of that turn's submission — never Judge or rubric text.
+    """
+
+    point: RubricPointRef
+    quote: str | None = Field(
+        description=(
+            "The learner's own words that demonstrated the point; null when the "
+            "Judge's evidence was not a verbatim quote."
+        )
+    )
+    turn_number: Annotated[int, Field(ge=1)] = Field(
+        description="The learner turn in which the point was demonstrated."
+    )
+
+
 class TeacherReport(BaseModel):
     final_percent: Percent = Field(
         description="Equals the session's final computed progress; never recomputed."
     )
     explained_well: list[str] = Field(
         description="Grounded in this session's Judge evaluations only. May be empty."
+    )
+    evidence: list[DemonstratedEvidence] = Field(
+        default_factory=list,
+        description=(
+            "One entry per confirmed rubric point, in rubric order. Defaults to "
+            "empty so reports stored before this field existed stay valid."
+        ),
     )
     misconceptions_corrected: list[str]
     gaps_and_accidental_implications: list[str]
@@ -207,3 +234,56 @@ class SessionFinished(BaseModel):
     graph_update: GraphUpdate | None = Field(
         description="Same semantics as on `TurnEnvelope`."
     )
+
+
+class SnapshotTurn(BaseModel):
+    turn_number: Annotated[int, Field(ge=1)]
+    learner_transcript: str = Field(description="The learner text that was judged.")
+    input_mode: InputMode
+    student_text: str = Field(
+        min_length=1,
+        description="The AI Student's reply. Fetch its audio at this turn_number.",
+    )
+    newly_covered_points: list[RubricPointRef] = Field(
+        description=(
+            "Rubric points confirmed on this turn only. Cumulative coverage is "
+            "derivable client-side."
+        )
+    )
+
+
+class SessionSnapshot(BaseModel):
+    """Learner-safe read model of a stored session (AC-SES-7 / AC-SES-10, ADR-0004).
+
+    Judge evaluations, rubric internals, and probe recommendations never appear.
+    """
+
+    session_id: str
+    graph_id: GraphId | None = Field(
+        description=(
+            "The session's knowledge graph; null for a `topic` session whose "
+            "graph does not exist yet."
+        )
+    )
+    concept: ConceptRef
+    mode: Mode
+    opening_text: str = Field(
+        min_length=1,
+        description="The AI Student's opening question. Fetch its audio at turn_number 0.",
+    )
+    turns: list[SnapshotTurn] = Field(
+        description="Every accepted learner turn in order. Judge evaluations never appear."
+    )
+    progress: Progress
+    active_misconception: ActiveMisconception | None
+    learner_turn_count: Annotated[int, Field(ge=0)]
+    turns_remaining: Annotated[int, Field(ge=0)]
+    status: SessionStatus
+    end_reason: EndReason | None = Field(description="Null while active.")
+    report: TeacherReport | None = Field(
+        description="Null while active; the stored Teacher Report once ended."
+    )
+    graph_update: GraphUpdate | None = Field(
+        description="Same semantics as on `TurnEnvelope`; replayed from storage."
+    )
+    created_at: datetime = Field(description="When the session was started.")

@@ -1,11 +1,14 @@
-// Browser-local persistence. The contract has no session-read endpoint, so
-// the running conversation lives here; Mastery (best score per Concept) is
-// browser-local by design and appears nowhere in the contract (mvp-spec.md).
+// Browser-local persistence, localStorage-first: the running conversation
+// lives here, with GET /api/sessions/{id} (ADR-0004) as the fallback when
+// this browser has no copy. Mastery (best score per Concept) is browser-local
+// by design and appears nowhere in the contract (mvp-spec.md).
 
 import type {
   ChatMessage,
+  RubricPointRef,
   SessionCreated,
   SessionFinished,
+  SessionSnapshot,
   StoredSession,
   TurnEnvelope,
 } from "./types";
@@ -48,6 +51,11 @@ export function loadStoredSession(sessionId: string): StoredSession | null {
   };
 }
 
+/** Sessions this browser still believes are active (candidates for finish-on-abandon). */
+export function loadActiveStoredSessions(): StoredSession[] {
+  return Object.values(loadAll()).filter((s) => s.status === "active");
+}
+
 export function saveStoredSession(session: StoredSession) {
   const all = loadAll();
   all[session.session_id] = session;
@@ -77,6 +85,61 @@ export function sessionFromCreated(created: SessionCreated): StoredSession {
     report: null,
     graph_update: null,
     created_at: new Date().toISOString(),
+  };
+}
+
+/**
+ * Rebuild a StoredSession from the server's learner-safe snapshot (ADR-0004).
+ * Used when this browser has no local copy; downstream code then works
+ * against the same local store as an ordinary refresh.
+ */
+export function sessionFromSnapshot(snapshot: SessionSnapshot): StoredSession {
+  const messages: ChatMessage[] = [
+    {
+      id: crypto.randomUUID(),
+      role: "student",
+      text: snapshot.opening_text,
+      turn_number: 0,
+    },
+  ];
+  const covered: RubricPointRef[] = [];
+  const knownIds = new Set<string>();
+  for (const turn of snapshot.turns) {
+    messages.push({
+      id: crypto.randomUUID(),
+      role: "learner",
+      text: turn.learner_transcript,
+      input_mode: turn.input_mode,
+    });
+    messages.push({
+      id: crypto.randomUUID(),
+      role: "student",
+      text: turn.student_text,
+      turn_number: turn.turn_number,
+    });
+    for (const point of turn.newly_covered_points) {
+      if (!knownIds.has(point.id)) {
+        knownIds.add(point.id);
+        covered.push(point);
+      }
+    }
+  }
+  return {
+    session_id: snapshot.session_id,
+    graph_id: snapshot.graph_id,
+    concept: snapshot.concept,
+    mode: snapshot.mode,
+    messages,
+    progress: snapshot.progress,
+    learner_turn_count: snapshot.learner_turn_count,
+    turns_remaining: snapshot.turns_remaining,
+    status: snapshot.status,
+    end_reason: snapshot.end_reason,
+    active_misconception: snapshot.active_misconception,
+    covered_points: covered,
+    report: snapshot.report,
+    graph_update: snapshot.graph_update,
+    created_at: snapshot.created_at,
   };
 }
 

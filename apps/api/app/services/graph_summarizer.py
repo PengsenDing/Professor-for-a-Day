@@ -1,4 +1,4 @@
-"""Session-end knowledge-graph summarization (ADR-0004).
+"""Session-end knowledge-graph summarization (ADR-0005).
 
 Two halves, deliberately separated:
 

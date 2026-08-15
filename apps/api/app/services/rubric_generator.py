@@ -1,4 +1,4 @@
-"""Rubric generator for user-graph concepts (ADR-0004).
+"""Rubric generator for user-graph concepts (ADR-0005).
 
 Freeform topics and user-graph concepts have no hand-authored rubric, so one is
 generated on demand. The LLM proposes; deterministic normalization and the

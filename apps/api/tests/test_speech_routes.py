@@ -88,6 +88,37 @@ def test_turn_zero_speech_synthesizes_the_opening_question(harness) -> None:
     assert harness.speech.synthesized_texts == [session["student_text"]]  # ADR-0003
 
 
+def test_speech_uses_the_voice_character_of_the_session_mode(harness) -> None:
+    """Each mode speaks with its own server-configured voice; no request field selects it."""
+    for mode in ("beginner", "confident", "skeptic"):
+        session = harness.client.post(
+            "/api/sessions", json={"graph_id": ML, "concept_id": GD, "mode": mode}
+        ).json()
+        response = harness.client.get(f"/api/sessions/{session['session_id']}/turns/0/speech")
+        assert response.status_code == 200
+
+    assert harness.speech.synthesized_modes == ["beginner", "confident", "skeptic"]
+
+
+def test_voice_id_is_resolved_per_mode_with_a_fallback() -> None:
+    from app.config import Settings
+
+    settings = Settings(
+        deutschlandgpt_api_key="test-key",
+        elevenlabs_api_key="test-key",
+        elevenlabs_voice_id="fallback-voice",
+        elevenlabs_voice_id_beginner="beginner-voice",
+        elevenlabs_voice_id_confident="confident-voice",
+        elevenlabs_voice_id_skeptic="skeptic-voice",
+    )
+
+    assert settings.voice_id_for_mode("beginner") == "beginner-voice"
+    assert settings.voice_id_for_mode("confident") == "confident-voice"
+    assert settings.voice_id_for_mode("skeptic") == "skeptic-voice"
+    assert settings.voice_id_for_mode(None) == "fallback-voice"
+    assert settings.voice_id_for_mode("unknown") == "fallback-voice"
+
+
 def test_speech_for_missing_turn_is_404(harness) -> None:
     session = start(harness)
 

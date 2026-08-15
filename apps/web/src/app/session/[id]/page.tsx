@@ -31,6 +31,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { CHARACTER_BY_MODE } from "@/lib/characters";
 import {
   finishSession,
+  getSession,
   getTurnSpeech,
   IS_MOCK,
   submitTurn,
@@ -47,6 +48,7 @@ import {
   loadStoredSession,
   recordMastery,
   saveStoredSession,
+  sessionFromSnapshot,
 } from "@/lib/session-store";
 import { useReducedMotion } from "@/lib/use-reduced-motion";
 import { useRevealManager } from "@/lib/use-reveal-manager";
@@ -124,11 +126,23 @@ export default function SessionPage() {
   useEffect(() => {
     let cancelled = false;
     // localStorage is client-only; defer the read past hydration.
-    void Promise.resolve().then(() => {
+    void Promise.resolve().then(async () => {
       if (cancelled) return;
       const stored = loadStoredSession(id);
-      if (stored) setSession(stored);
-      else setMissing(true);
+      if (stored) {
+        setSession(stored);
+        return;
+      }
+      // localStorage-first, server-fallback (ADR-0004): rebuild the session
+      // from the snapshot endpoint, persist it, and proceed as a refresh.
+      try {
+        const restored = sessionFromSnapshot(await getSession(id));
+        if (cancelled) return;
+        saveStoredSession(restored);
+        setSession(restored);
+      } catch {
+        if (!cancelled) setMissing(true);
+      }
     });
     return () => {
       cancelled = true;
@@ -427,10 +441,11 @@ export default function SessionPage() {
       <main className="flex flex-1 items-center justify-center p-4">
         <div className="w-full max-w-md space-y-4">
           <Alert variant="destructive">
-            <AlertTitle>Session not found on this device</AlertTitle>
+            <AlertTitle>Session not found</AlertTitle>
             <AlertDescription>
-              Sessions live in your browser — this link may be from another
-              device, or the session was cleared.
+              This session isn&apos;t stored in your browser and the server
+              doesn&apos;t know it either — the link may be wrong, or the
+              session was removed.
             </AlertDescription>
           </Alert>
           <Button variant="ghost" nativeButton={false} render={<Link href="/" />}>

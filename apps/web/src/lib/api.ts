@@ -14,6 +14,7 @@ import type {
   GraphList,
   SessionCreated,
   SessionFinished,
+  SessionSnapshot,
   StartSessionRequest,
   SubmitTurnRequest,
   Transcription,
@@ -24,6 +25,7 @@ import {
   mockFinishSession,
   mockGetGraphCurriculum,
   mockGetGraphs,
+  mockGetSession,
   mockGetTurnSpeech,
   mockStartSession,
   mockSubmitTurn,
@@ -115,6 +117,17 @@ export function deleteGraph(graphId: string): Promise<void> {
 export function startSession(req: StartSessionRequest): Promise<SessionCreated> {
   if (IS_MOCK) return mockStartSession(req);
   return request<SessionCreated>("/api/sessions", jsonInit("POST", req));
+}
+
+/**
+ * GET /api/sessions/{session_id} — learner-safe snapshot of a stored session
+ * (ADR-0004). Read-only; never invokes an LLM or speech provider.
+ */
+export function getSession(sessionId: string): Promise<SessionSnapshot> {
+  if (IS_MOCK) return mockGetSession(sessionId);
+  return request<SessionSnapshot>(
+    `/api/sessions/${encodeURIComponent(sessionId)}`,
+  );
 }
 
 /**

@@ -21,21 +21,25 @@ from ..schemas import (
     EndReason,
     ErrorCode,
     GraphUpdate,
+    InputMode,
     Mode,
     Progress,
     RubricPointRef,
     SessionCreated,
     SessionFinished,
+    SessionSnapshot,
     SessionStatus,
+    SnapshotTurn,
     StartSessionRequest,
     SubmitTurnRequest,
     TeacherReport,
     TurnEnvelope,
 )
+from .evaluation import DemonstratedPoint
 from .exceptions import GenerationError
 from .graphs import BUILTIN_GRAPH_ID, GraphService
 from .judge import JudgeAdapter
-from .report import build_report
+from .report import EvidenceSource, build_report
 from .scoring import ScoringState, apply_evaluation, pose_misconception
 from .slug import slugify
 from .student import StudentAdapter
@@ -272,6 +276,14 @@ class SessionOrchestrator:
                     concept_id=document["concept_id"],
                     state=state_after,
                     final_percent=percent,
+                    evidence_sources=[
+                        *_evidence_sources_from_document(document),
+                        EvidenceSource(
+                            turn_number,
+                            request.learner_text,
+                            evaluation.newly_demonstrated_points,
+                        ),
+                    ],
                 )
                 if ended
                 else None
@@ -279,7 +291,7 @@ class SessionOrchestrator:
 
             # Session-end graph work happens before the exit write so the
             # outcome persists atomically with the ending turn; failures
-            # degrade to None and never block the report (ADR-0004).
+            # degrade to None and never block the report (ADR-0005).
             graph_update: GraphUpdate | None = None
             if ended:
                 graph_update = await self._finalize_graph(
@@ -390,6 +402,7 @@ class SessionOrchestrator:
                 concept_id=document["concept_id"],
                 state=state,
                 final_percent=percent,
+                evidence_sources=_evidence_sources_from_document(document),
             )
             graph_update = await self._finalize_graph(
                 document, _transcript_from_document(document)
@@ -416,15 +429,63 @@ class SessionOrchestrator:
             )
             return _finished_from_document(updated)
 
+    # -- snapshot -----------------------------------------------------------
+
+    async def get_snapshot(self, session_id: str) -> SessionSnapshot:
+        """Learner-safe read model of a stored session (AC-SES-7 / AC-SES-10).
+
+        Read-only: no provider call, no mutation, no lock. Each turn is
+        projected field-by-field so the persisted Judge evaluation can never
+        leak into a response.
+        """
+        document = await self._get_or_404(session_id)
+        rubric = await self._rubric_for(document)
+        state = _state_from_document(document)
+        report = document.get("report")
+        graph_update = document.get("graph_update")
+        return SessionSnapshot(
+            session_id=str(document["_id"]),
+            graph_id=document.get("graph_id"),
+            concept=_taught_concept(document),
+            mode=Mode(document["mode"]),
+            opening_text=document["opening_text"],
+            turns=[
+                SnapshotTurn(
+                    turn_number=turn["turn_number"],
+                    learner_transcript=turn["learner_text"],
+                    input_mode=InputMode(turn["input_mode"]),
+                    student_text=turn["student_text"],
+                    newly_covered_points=[
+                        RubricPointRef.model_validate(point)
+                        for point in turn["newly_covered_points"]
+                    ],
+                )
+                for turn in document["turns"]
+            ],
+            progress=Progress(percent=document["progress_percent"]),
+            active_misconception=_active_misconception(rubric, state),
+            learner_turn_count=document["learner_turn_count"],
+            turns_remaining=max(self._max_turns - document["learner_turn_count"], 0),
+            status=SessionStatus(document["status"]),
+            end_reason=EndReason(document["end_reason"]) if document["end_reason"] else None,
+            report=TeacherReport.model_validate(report) if report else None,
+            graph_update=GraphUpdate.model_validate(graph_update) if graph_update else None,
+            created_at=document["created_at"],
+        )
+
     # -- speech lookup ------------------------------------------------------
 
-    async def student_text_for_turn(self, session_id: str, turn_number: int) -> str:
+    async def student_speech_for_turn(self, session_id: str, turn_number: int) -> tuple[str, str]:
+        """The stored AI Student text for one turn, plus the session's mode.
+
+        The mode selects the server-configured voice character (AC-CFG-5).
+        """
         document = await self._get_or_404(session_id)
         if turn_number == 0:
-            return document["opening_text"]
+            return document["opening_text"], document["mode"]
         for turn in document["turns"]:
             if turn["turn_number"] == turn_number:
-                return turn["student_text"]
+                return turn["student_text"], document["mode"]
         raise ApiError(404, ErrorCode.TURN_NOT_FOUND, "The session has no such turn.")
 
     # -- helpers ------------------------------------------------------------
@@ -480,7 +541,7 @@ class SessionOrchestrator:
         """Create or grow the session's knowledge graph at session end.
 
         Never raises: any failure degrades to None so the already-built report
-        still reaches the learner (ADR-0004).
+        still reaches the learner (ADR-0005).
         """
         graph_id = document.get("graph_id")
         topic = document.get("topic")
@@ -597,6 +658,21 @@ def _state_from_document(document: dict[str, Any]) -> ScoringState:
             document["introduced_misconception_summaries"]
         ),
     )
+
+
+def _evidence_sources_from_document(document: dict[str, Any]) -> list[EvidenceSource]:
+    """Each stored turn's demonstrated points, for the report's evidence trail."""
+    return [
+        EvidenceSource(
+            turn["turn_number"],
+            turn["learner_text"],
+            [
+                DemonstratedPoint.model_validate(point)
+                for point in turn["evaluation"].get("newly_demonstrated_points", [])
+            ],
+        )
+        for turn in document["turns"]
+    ]
 
 
 def _transcript_from_document(document: dict[str, Any]) -> list[tuple[str, str]]:

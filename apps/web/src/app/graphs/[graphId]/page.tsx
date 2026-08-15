@@ -14,6 +14,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { StudentVideoPickerAvatar } from "@/components/student-video-picker-avatar";
 import { CHARACTER_BY_MODE } from "@/lib/characters";
 import { ApiError, getGraphCurriculum, startSession } from "@/lib/api";
+import { finishAbandonedSessions } from "@/lib/finish-abandoned";
 import {
   loadMastery,
   markFreshSession,
@@ -123,6 +124,7 @@ export default function GraphPage() {
         concept_id: selected.id,
         mode,
       });
+      finishAbandonedSessions(created.session_id);
       saveStoredSession(sessionFromCreated(created));
       markFreshSession(created.session_id);
       router.push(`/session/${created.session_id}`);

@@ -26,11 +26,15 @@ info:
       enumerated, provider-neutral `code`. Vendors, models, upstream statuses,
       and upstream error text never appear in a response.
     - Turn submissions are idempotent via a client-generated `client_turn_id`.
+    - Sessions are resumable: `GET /api/sessions/{session_id}` returns a
+      learner-safe snapshot of any session — active or ended — without invoking
+      any provider (see docs/adr/0004-sessions-are-resumable-via-get.md). Judge
+      evaluations and rubric internals never appear in the snapshot.
     - Mastery is browser-local and appears nowhere in this contract.
     - Knowledge graphs: the builtin `machine-learning` graph is version-controlled
       backend data; user graphs are created from freeform teaching sessions and
       grow append-only at session end (see
-      docs/adr/0004-user-generated-knowledge-graphs.md). Rubric content never
+      docs/adr/0005-user-generated-knowledge-graphs.md). Rubric content never
       appears in graph responses.
 
 # Anonymous by design: the MVP has no accounts or authentication (spec: Out of Scope).
@@ -261,6 +265,61 @@ paths:
         "503":
           $ref: "#/components/responses/DatabaseUnavailable"
 
+  /api/sessions/{session_id}:
+    get:
+      tags: [sessions]
+      operationId: getSession
+      summary: Read a learner-safe session snapshot
+      description: |
+        Returns the current state of a Teaching Session — active or ended —
+        rebuilt from stored data. Never invokes an LLM or speech provider and
+        never mutates the session (AC-SES-7 / AC-SES-10, reinstated by
+        ADR-0004).
+
+        The snapshot carries the full ordered conversation (the opening
+        question plus every learner/AI Student exchange) so a client can
+        restore a session it no longer holds locally. It is a learner-safe
+        projection: Judge evaluations, rubric internals, and probe
+        recommendations never appear.
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      responses:
+        "200":
+          description: The session snapshot.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionSnapshot"
+              example:
+                session_id: 66bcd1f2a9c4e35d8f01a2b3
+                graph_id: machine-learning
+                concept: { id: gradient-descent, title: Gradient Descent }
+                mode: confident
+                opening_text: "I read that gradient descent just tries random parameter values until the loss looks small. That's basically it, right?"
+                turns:
+                  - turn_number: 1
+                    learner_transcript: "Gradient descent doesn't guess randomly. It computes the gradient of the loss with respect to each parameter and steps in the opposite direction."
+                    input_mode: voice
+                    student_text: "Okay, so the gradient tells us the direction. But then taking the biggest possible step each time must be fastest — why would anyone use small steps?"
+                    newly_covered_points:
+                      - { id: gd-1, label: "Uses the gradient of the loss" }
+                      - { id: gd-2, label: "Steps opposite the gradient direction" }
+                progress: { percent: 40 }
+                active_misconception:
+                  id: gd-mc-1
+                  summary: "Believes the largest possible step size always converges fastest."
+                learner_turn_count: 1
+                turns_remaining: 7
+                status: active
+                end_reason: null
+                report: null
+                graph_update: null
+                created_at: "2026-08-15T09:30:00Z"
+        "404":
+          $ref: "#/components/responses/SessionNotFound"
+        "503":
+          $ref: "#/components/responses/DatabaseUnavailable"
+
   /api/sessions/{session_id}/turns:
     post:
       tags: [sessions]
@@ -407,9 +466,11 @@ paths:
       operationId: getTurnSpeech
       summary: Synthesize speech for one AI Student reply
       description: |
-        Synthesizes the stored `student_text` of the given turn with the single
-        server-configured default voice and returns the audio. `turn_number: 0`
-        is the session's opening question.
+        Synthesizes the stored `student_text` of the given turn and returns the
+        audio. The voice is resolved server-side from the session's AI Student
+        mode — each mode speaks with its own configured character — and no
+        request parameter can select a voice. `turn_number: 0` is the session's
+        opening question.
 
         Synthesis happens on every fetch — nothing is cached or persisted
         server-side. Clients should cache the returned blob for replay. A muted
@@ -944,6 +1005,125 @@ components:
             - type: "null"
           description: Same semantics as on `TurnEnvelope`.
 
+    SnapshotTurn:
+      type: object
+      required:
+        - turn_number
+        - learner_transcript
+        - input_mode
+        - student_text
+        - newly_covered_points
+      properties:
+        turn_number:
+          type: integer
+          minimum: 1
+        learner_transcript:
+          type: string
+          description: The learner text that was judged.
+        input_mode:
+          $ref: "#/components/schemas/InputMode"
+        student_text:
+          type: string
+          minLength: 1
+          description: The AI Student's reply. Fetch its audio at this turn_number.
+        newly_covered_points:
+          type: array
+          description: Rubric points confirmed on this turn only. Cumulative coverage is derivable client-side.
+          items:
+            $ref: "#/components/schemas/RubricPointRef"
+
+    SessionSnapshot:
+      type: object
+      required:
+        - session_id
+        - graph_id
+        - concept
+        - mode
+        - opening_text
+        - turns
+        - progress
+        - active_misconception
+        - learner_turn_count
+        - turns_remaining
+        - status
+        - end_reason
+        - report
+        - graph_update
+        - created_at
+      properties:
+        session_id:
+          type: string
+        graph_id:
+          anyOf:
+            - $ref: "#/components/schemas/GraphId"
+            - type: "null"
+          description: Null for a `topic` session whose graph does not exist yet.
+        concept:
+          $ref: "#/components/schemas/ConceptRef"
+        mode:
+          $ref: "#/components/schemas/Mode"
+        opening_text:
+          type: string
+          minLength: 1
+          description: The AI Student's opening question. Fetch its audio at turn_number 0.
+        turns:
+          type: array
+          description: Every accepted learner turn in order. Judge evaluations never appear.
+          items:
+            $ref: "#/components/schemas/SnapshotTurn"
+        progress:
+          $ref: "#/components/schemas/Progress"
+        active_misconception:
+          anyOf:
+            - $ref: "#/components/schemas/ActiveMisconception"
+            - type: "null"
+        learner_turn_count:
+          type: integer
+          minimum: 0
+        turns_remaining:
+          type: integer
+          minimum: 0
+        status:
+          $ref: "#/components/schemas/SessionStatus"
+        end_reason:
+          anyOf:
+            - $ref: "#/components/schemas/EndReason"
+            - type: "null"
+          description: Null while active.
+        report:
+          anyOf:
+            - $ref: "#/components/schemas/TeacherReport"
+            - type: "null"
+          description: Null while active; the stored Teacher Report once ended.
+        graph_update:
+          anyOf:
+            - $ref: "#/components/schemas/GraphUpdate"
+            - type: "null"
+          description: Same semantics as on `TurnEnvelope`; replayed from storage.
+        created_at:
+          type: string
+          format: date-time
+          description: When the session was started.
+
+    DemonstratedEvidence:
+      type: object
+      required: [point, quote, turn_number]
+      properties:
+        point:
+          $ref: "#/components/schemas/RubricPointRef"
+        quote:
+          anyOf:
+            - type: string
+            - type: "null"
+          description: |
+            The learner's own words that demonstrated the point — surfaced only
+            when the Judge's recorded evidence is a verbatim substring of that
+            turn's submission; null otherwise. Never Judge or rubric text.
+        turn_number:
+          type: integer
+          minimum: 1
+          description: The learner turn in which the point was demonstrated.
+
     TeacherReport:
       type: object
       required:
@@ -964,6 +1144,15 @@ components:
           type: array
           items: { type: string }
           description: Grounded in this session's Judge evaluations only. May be empty.
+        evidence:
+          type: array
+          description: |
+            Why each point was scored: one entry per confirmed rubric point, in
+            rubric order, citing the learner's own words where available. Not
+            required so reports stored before this field existed stay valid;
+            when absent, treat as empty.
+          items:
+            $ref: "#/components/schemas/DemonstratedEvidence"
         misconceptions_corrected:
           type: array
           items: { type: string }

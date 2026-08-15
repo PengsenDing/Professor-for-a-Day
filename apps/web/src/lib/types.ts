@@ -117,6 +117,39 @@ export interface TurnEnvelope {
   graph_update: GraphUpdate | null;
 }
 
+export interface SnapshotTurn {
+  turn_number: number;
+  learner_transcript: string;
+  input_mode: InputMode;
+  student_text: string;
+  newly_covered_points: RubricPointRef[];
+}
+
+/**
+ * GET /api/sessions/{session_id} — learner-safe read model of a stored
+ * session (ADR-0004). Judge evaluations and rubric internals never appear.
+ */
+export interface SessionSnapshot {
+  session_id: string;
+  /** Null for a topic session whose graph does not exist yet. */
+  graph_id: string | null;
+  concept: ConceptRef;
+  mode: Mode;
+  /** The AI Student's opening question — turn 0 for the speech endpoint. */
+  opening_text: string;
+  turns: SnapshotTurn[];
+  progress: Progress;
+  active_misconception: ActiveMisconception | null;
+  learner_turn_count: number;
+  turns_remaining: number;
+  status: SessionStatus;
+  end_reason: EndReason | null;
+  report: TeacherReport | null;
+  /** Same semantics as on TurnEnvelope; replayed from storage. */
+  graph_update: GraphUpdate | null;
+  created_at: string;
+}
+
 export interface SessionFinished {
   session_id: string;
   status: "ended";
@@ -126,9 +159,21 @@ export interface SessionFinished {
   graph_update: GraphUpdate | null;
 }
 
+/**
+ * Why one rubric point was scored. `quote` is the learner's own words —
+ * surfaced only when the Judge's evidence was verbatim — or null.
+ */
+export interface DemonstratedEvidence {
+  point: RubricPointRef;
+  quote: string | null;
+  turn_number: number;
+}
+
 export interface TeacherReport {
   final_percent: number;
   explained_well: string[];
+  /** One entry per confirmed point, in rubric order. Absent in reports stored before this field existed. */
+  evidence?: DemonstratedEvidence[];
   misconceptions_corrected: string[];
   gaps_and_accidental_implications: string[];
   improvement_suggestion: string;
@@ -185,8 +230,9 @@ export interface ChatMessage {
 }
 
 /**
- * Client-held session snapshot. The contract has no GET /api/sessions/{id},
- * so the browser is the source of truth for the running conversation.
+ * Client-held session state. localStorage-first: the running conversation
+ * lives here, and GET /api/sessions/{id} (ADR-0004) is the fallback when this
+ * browser has no copy (cleared storage, or a link from another device).
  */
 export interface StoredSession {
   session_id: string;

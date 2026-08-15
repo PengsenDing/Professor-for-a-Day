@@ -1,4 +1,4 @@
-"""Graph service: one façade over the builtin catalog and user graphs (ADR-0004).
+"""Graph service: one façade over the builtin catalog and user graphs (ADR-0005).
 
 Callers (routes, orchestrator) never care where a graph lives. The builtin
 Machine Learning graph is version-controlled files and never touches MongoDB —

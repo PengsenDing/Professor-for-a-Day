@@ -1,4 +1,4 @@
-"""User knowledge-graph persistence (ADR-0004).
+"""User knowledge-graph persistence (ADR-0005).
 
 The only module that knows the `knowledge_graphs` document structure. A graph
 document embeds its concepts (each with an optional cached generated rubric)

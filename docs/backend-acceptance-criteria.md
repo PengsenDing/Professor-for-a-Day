@@ -59,15 +59,17 @@ OpenAPI document, the OpenAPI document wins. §3.5 lists the criteria this super
 | --- | --- | --- |
 | `GET` | `/api/curriculum` | Concept catalog + prerequisite edges (no LLM) |
 | `POST` | `/api/sessions` | Start a Teaching Session; returns the opening question (text) |
+| `GET` | `/api/sessions/{session_id}` | Learner-safe session snapshot for resume (no LLM, no mutation; ADR-0004) |
 | `POST` | `/api/sessions/{session_id}/turns` | Submit a learner explanation (JSON text only); returns the turn envelope |
 | `GET` | `/api/sessions/{session_id}/turns/{turn_number}/speech` | Synthesize speech for one AI Student reply on demand (`turn_number` 0 = opening question) |
 | `POST` | `/api/sessions/{session_id}/finish` | End early; returns the Teacher Report (idempotent) |
 | `POST` | `/api/speech/transcriptions` | Audio → transcript; touches nothing else |
 
-There is **no** `GET /api/sessions/{session_id}`: a mid-session browser refresh loses the
-session by design. `/health` remains as specified in the OpenAPI document. The pre-contract
-`/api/chat` and `/api/conversations` routes have been removed from the codebase; nothing in
-this document applies to them.
+`GET /api/sessions/{session_id}` (ADR-0004) returns the learner-safe `SessionSnapshot` so a
+client can restore a session it no longer holds locally; it reversed the earlier decision
+that a browser refresh loses the session by design. `/health` remains as specified in the
+OpenAPI document. The pre-contract `/api/chat` and `/api/conversations` routes have been
+removed from the codebase; nothing in this document applies to them.
 
 ### 3.2 Enumerations
 
@@ -80,7 +82,8 @@ this document applies to them.
 
 Speech is **synthesized on fetch** (ADR-0003). JSON responses carry no audio and no
 `speech` object. The client fetches `GET .../turns/{turn_number}/speech`, which
-synthesizes the stored `student_text` with the fixed default voice and returns
+synthesizes the stored `student_text` with the server-configured voice for the
+session's AI Student mode and returns
 `audio/mpeg`. Nothing is cached or persisted server-side; clients cache blobs for replay.
 Voice input is two-step and non-editable: transcribe via `/api/speech/transcriptions`,
 then submit the transcript through the ordinary turn contract with `input_mode: "voice"`.
@@ -101,8 +104,8 @@ Superseded by the frozen contract (read them through the OpenAPI document):
 - **AC-SES-1, AC-SES-9, AC-TRN-1, AC-TTS-1, AC-TTS-2, AC-TTS-4, AC-TTS-6** — no `speech`
   object in envelopes; the TTS behavior they describe now applies to the speech endpoint
   (synthesis failure = `502 SPEECH_FAILED` there, never blocking session or text flow).
-- **AC-SES-7, AC-SES-10** — `GET /api/sessions/{id}` does not exist; persistence-before-
-  response is asserted through the repository instead.
+- **AC-SES-7, AC-SES-10** — were superseded while `GET /api/sessions/{id}` did not exist;
+  **reinstated by ADR-0004**, which added the endpoint as the learner-safe `SessionSnapshot`.
 - **AC-CFG-4** — the `503` body is the error envelope with code `DB_UNAVAILABLE`, not a
   `detail` object.
 - **AC-STT-1** — the transcript is not user-editable; the flow is voice-native
@@ -115,7 +118,8 @@ Superseded by the frozen contract (read them through the OpenAPI document):
 ### A. Configuration and startup — `AC-CFG`
 
 - **AC-CFG-1** — The server reads `DEUTSCHLANDGPT_API_KEY`, `DEUTSCHLANDGPT_MODEL`,
-  `DEUTSCHLANDGPT_BASE_URL`, `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`,
+  `DEUTSCHLANDGPT_BASE_URL`, `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`, the per-mode
+  `ELEVENLABS_VOICE_ID_BEGINNER` / `ELEVENLABS_VOICE_ID_CONFIDENT` / `ELEVENLABS_VOICE_ID_SKEPTIC`,
   `ELEVENLABS_STT_MODEL`, `ELEVENLABS_TTS_MODEL`, and the existing MongoDB settings from the
   environment only. No key, token, or voice credential appears in source or in
   `.env.example` beyond its variable name.
@@ -127,8 +131,8 @@ Superseded by the frozen contract (read them through the OpenAPI document):
 - **AC-CFG-4** — Startup with an unreachable MongoDB still succeeds. `/health` reports
   `database: "down"`, `/api/curriculum` still answers `200`, and every `/api/sessions*` route
   answers `503` with `{"detail": "The database is not available."}`.
-- **AC-CFG-5** — One fixed default ElevenLabs voice is configured server-side. No request
-  parameter can select a different voice.
+- **AC-CFG-5** — ElevenLabs voices are fixed server-side: one voice per AI Student mode,
+  with `ELEVENLABS_VOICE_ID` as the fallback. No request parameter can select a voice.
 - **AC-CFG-6** — `SESSION_MAX_LEARNER_TURNS` defaults to `8` and is read from configuration
   rather than hard-coded at a call site, so the limit is testable without patching internals.
 
@@ -201,7 +205,9 @@ Superseded by the frozen contract (read them through the OpenAPI document):
   created and returned `201` with `speech.available = false` and a non-empty `student_text`.
   A speech failure never blocks session creation.
 - **AC-SES-10** — `GET /api/sessions/{session_id}` returns current state without invoking any
-  provider. An unknown or malformed id returns `404`.
+  provider. An unknown or malformed id returns `404`. The response is the learner-safe
+  `SessionSnapshot` (ADR-0004): the persisted Judge evaluation, probe recommendations, and
+  rubric internals never appear.
 
 ### E. Teaching turn orchestration — `AC-TRN`
 
@@ -311,9 +317,10 @@ Superseded by the frozen contract (read them through the OpenAPI document):
 - **AC-END-5** — Every exit path produces a Teacher Report. There is no code path that ends a
   session without one.
 - **AC-END-6** — The Teacher Report contains: `final_percent`; `explained_well` (list);
-  `misconceptions_corrected` (list); `gaps_and_accidental_implications` (list);
-  `improvement_suggestion` (exactly one, non-empty string); `recommended_next_concept`
-  (`{id, title}`); and `mastery_achieved` (boolean).
+  `evidence` (list, see AC-END-12); `misconceptions_corrected` (list);
+  `gaps_and_accidental_implications` (list); `improvement_suggestion` (exactly one,
+  non-empty string); `recommended_next_concept` (`{id, title}`); and `mastery_achieved`
+  (boolean).
 - **AC-END-7** — `final_percent` equals the session's final computed progress. The report
   never restates or recomputes a different number.
 - **AC-END-8** — `mastery_achieved` is `true` if and only if `final_percent == 100`. Below 100
@@ -328,6 +335,13 @@ Superseded by the frozen contract (read them through the OpenAPI document):
 - **AC-END-11** — A report is generated even when progress is `0` and no rubric point was
   confirmed; the lists may be empty but `improvement_suggestion` and
   `recommended_next_concept` are always present.
+- **AC-END-12** — `evidence` explains why each point was scored: one
+  `{point: {id, label}, quote, turn_number}` entry per confirmed rubric point, in rubric
+  order. `quote` is surfaced only when the Judge's recorded evidence is a **verbatim
+  substring** of that turn's learner submission — the learner's own words — and is `null`
+  otherwise; the Judge's free text never appears. Unconfirmed points never appear. The
+  field is optional-with-empty-default so reports persisted before it existed still
+  validate.
 - **AC-END-12** — The report is persisted on the session document at the moment the session
   ends and is returned verbatim on subsequent reads.
 - **AC-END-13** — The backend does not decide or emit the accomplishment animation. It only
@@ -358,8 +372,8 @@ Superseded by the frozen contract (read them through the OpenAPI document):
 - **AC-TTS-2** — `speech` has the shape `{"available": bool, "audio_base64": str | null,
   "mime_type": str | null}`. When `available` is `true`, `audio_base64` is non-empty and
   decodes to non-zero bytes.
-- **AC-TTS-3** — All syntheses use the one configured default voice. No request field can
-  change it, and a test asserts the configured voice id reached the adapter.
+- **AC-TTS-3** — All syntheses use the server-configured voice for the session's AI Student
+  mode. No request field can change it, and a test asserts the mode-resolved voice selection.
 - **AC-TTS-4** — A synthesis failure is non-fatal: the response is still `200`/`201` with the
   full `student_text` and `speech.available = false`. The session stays active and the next
   turn is accepted. Muting is a client concern and does not disable the server-side call.

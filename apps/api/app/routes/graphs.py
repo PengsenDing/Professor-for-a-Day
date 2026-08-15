@@ -1,7 +1,7 @@
 """Knowledge-graph routes (`listGraphs`, `getGraphCurriculum`).
 
 Serve graph structure only: no LLM call, no rubric content, no per-learner
-state (AC-CAT-1/6/8 extended to user graphs by ADR-0004).
+state (AC-CAT-1/6/8 extended to user graphs by ADR-0005).
 """
 
 from fastapi import APIRouter, Response

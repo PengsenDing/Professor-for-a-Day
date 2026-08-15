@@ -40,7 +40,7 @@ class GraphList(BaseModel):
 
 
 class GraphUpdate(BaseModel):
-    """What a finished session did to a knowledge graph (ADR-0004)."""
+    """What a finished session did to a knowledge graph (ADR-0005)."""
 
     graph_id: GraphId
     graph_title: str

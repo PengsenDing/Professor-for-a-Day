@@ -8,6 +8,7 @@ import { ApiError } from "./errors";
 import type {
   Concept,
   Curriculum,
+  DemonstratedEvidence,
   EndReason,
   GraphList,
   GraphUpdate,
@@ -16,6 +17,7 @@ import type {
   RubricPointRef,
   SessionCreated,
   SessionFinished,
+  SessionSnapshot,
   StartSessionRequest,
   SubmitTurnRequest,
   TeacherReport,
@@ -182,6 +184,10 @@ interface MockSession {
   graph_update: GraphUpdate | null;
   /** Stored envelopes keyed by client_turn_id (idempotent retries). */
   turns: Record<string, TurnEnvelope>;
+  /** Absent in sessions stored before the snapshot endpoint existed. */
+  created_at?: string;
+  /** Learner quote per covered point; absent in older stored sessions. */
+  evidence_by_point?: Record<string, { quote: string; turn_number: number }>;
 }
 
 /** Pre-multi-graph stored sessions lack the new fields; read them as builtin. */
@@ -260,9 +266,16 @@ function buildReport(session: MockSession): TeacherReport {
   if (session.misconception_posed && !session.misconception_resolved) {
     gaps.push(`Left unresolved: ${rubric.misconception.summary.toLowerCase()}`);
   }
+  const evidence: DemonstratedEvidence[] = covered.flatMap((p) => {
+    const source = session.evidence_by_point?.[p.id];
+    return source
+      ? [{ point: p, quote: source.quote, turn_number: source.turn_number }]
+      : [];
+  });
   return {
     final_percent: finalPercent,
     explained_well: covered.map((p) => `${p.label} — explained clearly with evidence.`),
+    evidence,
     misconceptions_corrected:
       session.misconception_posed && session.misconception_resolved
         ? [rubric.misconception.summary.replace(/^Believes /, "Corrected the belief that ")]
@@ -507,6 +520,7 @@ export async function mockStartSession(req: StartSessionRequest): Promise<Sessio
     report: null,
     graph_update: null,
     turns: {},
+    created_at: new Date().toISOString(),
   };
   const all = loadAll();
   all[session.session_id] = session;
@@ -522,6 +536,46 @@ export async function mockStartSession(req: StartSessionRequest): Promise<Sessio
     turns_remaining: 8,
     status: "active",
     active_misconception: null,
+  };
+}
+
+export async function mockGetSession(sessionId: string): Promise<SessionSnapshot> {
+  await delay(300);
+  const session = requireSession(loadAll(), sessionId);
+  const rubric = sessionRubric(session);
+  const envelopes = Object.values(session.turns).sort(
+    (a, b) => a.turn_number - b.turn_number,
+  );
+  return {
+    session_id: session.session_id,
+    graph_id: sessionGraphId(session),
+    concept: { id: session.concept_id, title: sessionTitle(session) },
+    mode: session.mode,
+    opening_text: openingQuestion(
+      session.concept_id,
+      sessionTitle(session),
+      session.mode,
+    ),
+    turns: envelopes.map((envelope) => ({
+      turn_number: envelope.turn_number,
+      learner_transcript: envelope.learner_transcript,
+      // The mock's stored envelopes don't retain the request's input_mode.
+      input_mode: "text",
+      student_text: envelope.student_text,
+      newly_covered_points: envelope.newly_covered_points,
+    })),
+    progress: { percent: percentFor(session) },
+    active_misconception:
+      session.misconception_posed && !session.misconception_resolved
+        ? rubric.misconception
+        : null,
+    learner_turn_count: session.learner_turn_count,
+    turns_remaining: Math.max(MAX_LEARNER_TURNS - session.learner_turn_count, 0),
+    status: session.status,
+    end_reason: session.end_reason,
+    report: session.report,
+    graph_update: session.graph_update ?? null,
+    created_at: session.created_at ?? new Date().toISOString(),
   };
 }
 
@@ -590,6 +644,15 @@ export async function mockSubmitTurn(
   }
 
   session.learner_turn_count += 1;
+  // A verbatim prefix of the learner's own words serves as the evidence quote.
+  const quote = text.length > 120 ? text.slice(0, 120) : text;
+  session.evidence_by_point ??= {};
+  for (const point of newlyCovered) {
+    session.evidence_by_point[point.id] = {
+      quote,
+      turn_number: session.learner_turn_count,
+    };
+  }
   const percent = percentFor(session);
   if (percent === 100) {
     session.status = "ended";

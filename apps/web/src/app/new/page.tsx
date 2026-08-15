@@ -9,6 +9,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { StudentVideoPickerAvatar } from "@/components/student-video-picker-avatar";
 import { CHARACTER_BY_MODE } from "@/lib/characters";
 import { startSession } from "@/lib/api";
+import { finishAbandonedSessions } from "@/lib/finish-abandoned";
 import {
   markFreshSession,
   saveStoredSession,
@@ -48,6 +49,7 @@ export default function NewGraphPage() {
     setStartError(null);
     try {
       const created = await startSession({ topic: trimmed, mode });
+      finishAbandonedSessions(created.session_id);
       saveStoredSession(sessionFromCreated(created));
       markFreshSession(created.session_id);
       router.push(`/session/${created.session_id}`);
