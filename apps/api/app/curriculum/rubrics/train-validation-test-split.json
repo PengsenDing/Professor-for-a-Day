@@ -21,11 +21,17 @@
     {
       "id": "tvt-mc-1",
       "summary": "Validation and test sets are the same thing — you just need one pile of held-out data for everything.",
+      "belief": "Validation set and test set are just two names for the same idea: one chunk of data the model never trains on, which I can use for tuning and for the final score alike.",
+      "why_plausible": "Both sets are held out from training and both are used to measure performance, so they look like one concept wearing two labels.",
+      "fallback_line": "The validation set and the test set are just the same held-out data under two names — one pile does both jobs, and a second pile would be a waste.",
       "correction": "The learner explains why the roles must be separate: because the validation set drives many tuning decisions, the model becomes indirectly fitted to it, so its scores drift optimistic; a separate untouched test set is needed for a final unbiased measurement."
     },
     {
       "id": "tvt-mc-2",
       "summary": "It's fine to tweak the model repeatedly based on test-set results until the test score is high.",
+      "belief": "The test set exists to tell me how good my model is, so the smart workflow is to check the test score after every change and keep whatever raises it.",
+      "why_plausible": "Using your most trusted measurement to guide each improvement feels like exactly what careful, data-driven development should look like.",
+      "fallback_line": "I run the test set after every tweak and keep the changes that raise the score — that's literally what the test set is for.",
       "correction": "The learner clarifies that selecting changes by test performance is a form of overfitting to the test set: after many peeks the reported score no longer predicts real-world performance, which defeats the test set's entire purpose."
     }
   ],

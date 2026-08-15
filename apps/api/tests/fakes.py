@@ -173,16 +173,18 @@ class FakeStudent:
         mode,
         transcript,
         learner_text,
-        recommended_probe,
+        probe_focus,
         pose,
+        press,
         session_ended,
     ) -> str:
         self.call_log.append("student_reply")
         self.reply_calls.append(
             {
                 "mode": mode,
-                "recommended_probe": recommended_probe,
+                "probe_focus": probe_focus,
                 "pose": pose,
+                "press": press,
                 "session_ended": session_ended,
                 "transcript": list(transcript),
             }
@@ -193,6 +195,8 @@ class FakeStudent:
             return "Thanks for teaching me!"
         if pose is not None:
             return f"But I thought: {pose.summary}"
+        if press is not None:
+            return f"I still think: {press.summary}"
         return "Interesting — can you tell me more?"
 
 

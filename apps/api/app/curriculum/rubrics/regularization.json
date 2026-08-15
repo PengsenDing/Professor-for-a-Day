@@ -21,11 +21,17 @@
     {
       "id": "reg-mc-1",
       "summary": "Regularization improves the model's fit on the training data — that's why we add it.",
+      "belief": "We add the regularization term to the loss to guide training toward a better fit, so with regularization turned on the model should score higher on the training data.",
+      "why_plausible": "Regularization is added to make the model better, and 'better' naturally reads as a higher score on the data you are training on.",
+      "fallback_line": "The penalty term goes into the loss we're minimizing, so it's clearly there to help the model fit the training data better — that's how I understand it.",
       "correction": "The learner clarifies that regularization typically makes training-set fit slightly worse on purpose; its benefit shows up on validation/test data, because restraining the model keeps it from fitting noise."
     },
     {
       "id": "reg-mc-2",
       "summary": "More regularization is always safer, so the penalty should be set as strong as possible.",
+      "belief": "Since regularization protects against overfitting, cranking lambda up as high as possible gives the maximum protection — there's no downside to more of it.",
+      "why_plausible": "If a technique cures a problem, a bigger dose feels like it can only cure the problem harder.",
+      "fallback_line": "Regularization is what stops overfitting, so I just crank lambda as high as it will go — more protection, zero downside.",
       "correction": "The learner explains that too much regularization causes underfitting — the model becomes too constrained to capture real patterns — so the regularization strength must be tuned (usually on a validation set) to balance underfitting against overfitting."
     }
   ],

@@ -21,11 +21,17 @@
     {
       "id": "sl-mc-1",
       "summary": "In supervised learning a human supervises the model live, correcting each prediction by hand as it trains.",
+      "belief": "I've been assuming 'supervised' means what it sounds like: a person sits with the model during training and corrects each of its predictions by hand until it gets them right.",
+      "why_plausible": "In everyday language a supervisor is a person actively watching and correcting someone's work, so the term naturally suggests live human oversight.",
+      "fallback_line": "It's literally called supervised learning — during training a person sits there watching the model and fixing each wrong prediction by hand. That's what the name means.",
       "correction": "The learner clarifies that 'supervision' refers to the labels in the dataset acting as the answer key; the comparison and correction loop is automatic during training, with no human intervening on individual predictions."
     },
     {
       "id": "sl-mc-2",
       "summary": "If a model scores perfectly on its training examples, the learning has fully succeeded.",
+      "belief": "To me, a model that gets every training example right has clearly learned the task perfectly — 100% on the material it studied means the learning is done.",
+      "why_plausible": "In school, scoring 100% on the exercises you practiced is exactly what mastering a subject looks like.",
+      "fallback_line": "My model gets every single training example right — a perfect score. The learning is finished and it has fully mastered the task.",
       "correction": "The learner explains that success is measured on held-out unseen data, because perfect training performance can come from memorization; a model that fails on new inputs has not learned in the useful sense."
     }
   ],

@@ -42,6 +42,10 @@ logger = logging.getLogger(__name__)
 # Module-level so every request handler serializes on the same lock (AC-TRN-10).
 _SESSION_LOCKS: dict[str, asyncio.Lock] = {}
 
+# Canned concession for a mastery ending: every point is confirmed and the posed
+# challenge resolved, so the closing is scripted rather than generated.
+MASTERY_CLOSING_LINE = "Ohh — I think I actually get it now. Thanks for teaching me!"
+
 
 class SessionOrchestrator:
     def __init__(
@@ -139,28 +143,50 @@ class SessionOrchestrator:
 
             turn_number = document["learner_turn_count"] + 1
             percent = max(result.percent, document["progress_percent"])  # monotonic
+            ended, end_reason = self._exit_state(percent, turn_number)
 
-            pose = self._pick_misconception_to_pose(rubric, result.state, percent)
+            # An ended session poses nothing new; an active one poses the next
+            # challenge, or keeps pressing the outstanding one so the Student
+            # cannot drift into conceding on its own (only the Judge resolves it).
+            pose = (
+                None if ended else self._pick_misconception_to_pose(rubric, result.state, percent)
+            )
             state_after = (
                 pose_misconception(result.state, pose.id) if pose is not None else result.state
             )
+            press: RubricMisconception | None = None
+            if not ended and pose is None:
+                press = _rubric_misconception(rubric, state_after.active_misconception_id())
 
-            ended, end_reason = self._exit_state(percent, turn_number)
-            try:
-                student_text = await self._student.reply(
-                    rubric=rubric,
-                    concept_title=self._concept_title(document["concept_id"]),
-                    mode=mode,
-                    transcript=transcript,
-                    learner_text=request.learner_text,
-                    recommended_probe=evaluation.recommended_next_probe,
-                    pose=None if ended else pose,
-                    session_ended=ended,
-                )
-            except GenerationError as error:
-                raise _generation_failed() from error
-            if ended:
-                state_after = result.state  # an ended session poses nothing new
+            # The probe target is selected here, in code, as a learner-safe point
+            # label. The Judge's free-text recommendation is persisted with the
+            # evaluation but never forwarded to the Student, so rubric answer text
+            # cannot leak through it.
+            uncovered = [
+                point for point in rubric.points
+                if point.id not in state_after.confirmed_point_ids
+            ]
+            probe_focus = uncovered[0].label if uncovered else None
+
+            if ended and end_reason is EndReason.mastery:
+                # The moment of victory is scripted, not generated: the Judge just
+                # resolved the challenge, so the concession can never drift.
+                student_text = MASTERY_CLOSING_LINE
+            else:
+                try:
+                    student_text = await self._student.reply(
+                        rubric=rubric,
+                        concept_title=self._concept_title(document["concept_id"]),
+                        mode=mode,
+                        transcript=transcript,
+                        learner_text=request.learner_text,
+                        probe_focus=probe_focus,
+                        pose=pose,
+                        press=press,
+                        session_ended=ended,
+                    )
+                except GenerationError as error:
+                    raise _generation_failed() from error
 
             active = _active_misconception(rubric, state_after)
             newly_covered = [
@@ -387,6 +413,17 @@ def _transcript_from_document(document: dict[str, Any]) -> list[tuple[str, str]]
         transcript.append(("teacher", turn["learner_text"]))
         transcript.append(("student", turn["student_text"]))
     return transcript
+
+
+def _rubric_misconception(
+    rubric: Rubric, misconception_id: str | None
+) -> RubricMisconception | None:
+    if misconception_id is None:
+        return None
+    for misconception in rubric.misconceptions:
+        if misconception.id == misconception_id:
+            return misconception
+    return None
 
 
 def _active_misconception(rubric: Rubric, state: ScoringState) -> ActiveMisconception | None:

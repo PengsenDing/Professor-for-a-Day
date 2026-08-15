@@ -45,6 +45,11 @@ class Settings(BaseSettings):
     llm_temperature: float = Field(default=0.2, ge=0.0, le=2.0)
     llm_timeout_seconds: float = Field(default=60.0, gt=0.0)
 
+    # The Judge classifies against closed id sets, so it runs cold; the AI Student
+    # only phrases a directive it is handed, so some sampling variety is safe.
+    judge_temperature: float = Field(default=0.0, ge=0.0, le=2.0)
+    student_temperature: float = Field(default=0.7, ge=0.0, le=2.0)
+
     log_level: str = "INFO"
 
 

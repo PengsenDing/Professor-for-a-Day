@@ -31,16 +31,25 @@
     {
       "id": "lr-mc-1",
       "summary": "A higher learning rate always means faster learning, so you should crank it up to finish training sooner.",
+      "belief": "The learning rate controls how fast the model learns, so setting it higher should always make training finish sooner — a bigger step covers more ground per update.",
+      "why_plausible": "The name literally says 'rate of learning', and bigger steps obviously cover more distance, so higher sounds like it can only mean faster.",
+      "fallback_line": "It's called the learning rate, so a bigger value just means the model learns faster — I'd set it as high as possible and finish training sooner.",
       "correction": "The learner explains that beyond a point, larger steps stop helping: the updates overshoot the minimum, making the loss oscillate or diverge, so training gets worse or fails entirely — speed comes from the largest rate that still converges, not the largest rate possible."
     },
     {
       "id": "lr-mc-2",
       "summary": "The learning rate is something the model learns and optimizes during training, just like its weights.",
+      "belief": "Since training is all about optimizing numbers to reduce the loss, I assume the learning rate is one of the numbers the model tunes for itself along the way, just like its weights.",
+      "why_plausible": "Training already optimizes millions of numbers automatically, so it seems odd that this one number would be left out of the same process.",
+      "fallback_line": "Training already adjusts millions of weights automatically, so the learning rate is just one more number the model tunes for itself as it goes — change my mind.",
       "correction": "The learner clarifies that the learning rate is a hyperparameter chosen from outside the training loop: gradient descent updates weights using the learning rate but does not itself optimize the learning rate; humans (or automated hyperparameter search, or a preset schedule) set it."
     },
     {
       "id": "lr-mc-3",
       "summary": "There is one correct learning rate value (like 0.01) that works for every model and dataset.",
+      "belief": "I believe 0.01 is the standard correct learning rate — every tutorial I've seen uses it, so it should work for any model and dataset.",
+      "why_plausible": "Tutorials and library defaults keep showing the same value, which makes it look like a solved constant rather than a per-problem choice.",
+      "fallback_line": "Every tutorial I've read sets the learning rate to 0.01, so that's clearly the correct value — I can just use it for whatever model and dataset I'm training on.",
       "correction": "The learner explains that the right learning rate depends on the model, the loss surface, the data, and even the batch size and optimizer, so it must be tuned per problem; a value that trains one model well can make another diverge, which is exactly why practitioners sweep several values."
     }
   ],

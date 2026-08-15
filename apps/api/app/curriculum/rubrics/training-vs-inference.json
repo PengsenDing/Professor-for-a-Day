@@ -21,11 +21,17 @@
     {
       "id": "tvi-mc-1",
       "summary": "A deployed model keeps learning from every prediction it makes.",
+      "belief": "My understanding is that once a model is deployed, every prediction it makes is another learning opportunity, so it keeps improving automatically the more people use it.",
+      "why_plausible": "Apps really do seem to get better over time, and 'machine learning' sounds like something that should keep learning whenever it runs.",
+      "fallback_line": "It's called machine learning, and popular apps clearly improve as more people use them — so every prediction a deployed model makes teaches it something new.",
       "correction": "The learner clarifies that a standard deployed model does not update itself during inference; its parameters stay fixed until someone retrains it, so using the model more does not make it smarter on its own."
     },
     {
       "id": "tvi-mc-2",
       "summary": "Training and inference are the same computation, just run at different times.",
+      "belief": "I think training and inference run the exact same computation — the model processes inputs and produces outputs either way, and we just call it different names depending on when it happens.",
+      "why_plausible": "In both phases the same model takes inputs and produces outputs, so the underlying computation looks identical from the outside.",
+      "fallback_line": "In both training and inference the model takes an input and produces an output, so they're the same computation — we just run it at different times with different data.",
       "correction": "The learner explains that training involves an extra loop absent at inference: computing errors against known labels and updating parameters (e.g. via gradient descent), whereas inference is a single forward pass from input to output with no labels and no updates."
     }
   ],

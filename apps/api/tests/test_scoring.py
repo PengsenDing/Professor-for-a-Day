@@ -23,8 +23,22 @@ RUBRIC = Rubric.model_validate(
             {"id": "gd-4", "label": "Loss link", "description": "Ties steps to the loss."},
         ],
         "misconceptions": [
-            {"id": "gd-mc-1", "summary": "Always finds the best", "correction": "Local minima."},
-            {"id": "gd-mc-2", "summary": "One step is enough", "correction": "Iterative."},
+            {
+                "id": "gd-mc-1",
+                "summary": "Always finds the best",
+                "belief": "It always reaches the very best solution.",
+                "why_plausible": "Downhill motion sounds like it must reach the bottom.",
+                "fallback_line": "Doesn't it always end up at the best possible model?",
+                "correction": "Local minima.",
+            },
+            {
+                "id": "gd-mc-2",
+                "summary": "One step is enough",
+                "belief": "One good step lands on the answer.",
+                "why_plausible": "The gradient looks like it points at the solution.",
+                "fallback_line": "Why repeat it — doesn't one step get you there?",
+                "correction": "Iterative.",
+            },
         ],
         "probes": {
             "beginner": ["What is a gradient?"],

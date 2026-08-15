@@ -21,11 +21,17 @@
     {
       "id": "nn-mc-1",
       "summary": "Neural networks work the same way as the human brain, just implemented in software.",
+      "belief": "I understand neural networks as digital versions of the brain: the artificial neurons fire and connect the same way biological neurons do, just running in software instead of tissue.",
+      "why_plausible": "The vocabulary itself — neurons, activations, firing, connections — is borrowed from neuroscience, so it sounds like the software is a faithful copy of the biology.",
+      "fallback_line": "They're called neurons and they fire and connect to each other, so a neural network is basically a brain running in software instead of tissue — change my mind.",
       "correction": "The learner clarifies that the brain analogy is loose inspiration only: artificial neurons are simple arithmetic units (weighted sum plus activation), and real biological neurons and learning are vastly more complex and work differently; the network is a mathematical function, not a simulated brain."
     },
     {
       "id": "nn-mc-2",
       "summary": "Adding more layers always makes a neural network more accurate.",
+      "belief": "Each layer lets the network learn something extra, so stacking more layers should always give a more accurate model — if my network underperforms, the fix is to make it deeper.",
+      "why_plausible": "Deeper networks can represent strictly more functions, and famous models keep getting bigger, so more layers looks like a free upgrade.",
+      "fallback_line": "Every extra layer gives the network more it can learn, so if my model isn't accurate enough the fix is simple: I just keep adding layers until it is.",
       "correction": "The learner explains that more layers add capacity but also make the network more prone to overfitting and harder to train, so bigger is not automatically better; the right size depends on the task and the amount of data."
     }
   ],
