@@ -14,7 +14,11 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { StudentVideoPickerAvatar } from "@/components/student-video-picker-avatar";
 import { CHARACTER_BY_MODE } from "@/lib/characters";
 import { ApiError, getGraphCurriculum } from "@/lib/api";
-import { loadMastery, stashPendingStart } from "@/lib/session-store";
+import {
+  findActiveSession,
+  loadMastery,
+  stashPendingStart,
+} from "@/lib/session-store";
 import type { Curriculum, Mode } from "@/lib/types";
 import { MODES, MODE_BY_STUDENT_ID } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -110,6 +114,17 @@ function GraphPageInner() {
 
   function selectConcept(id: string) {
     if (viewOnly) return; // just looking — a click never starts the setup flow
+    // An unfinished session on this concept resumes with its chat history
+    // instead of restarting; the session page rebuilds it from localStorage
+    // or the snapshot endpoint (ADR-0004). Starting over still works: finish
+    // the resumed session, then pick the concept again.
+    const active = findActiveSession(graphId, id);
+    if (active) {
+      setConceptId(id); // highlight the node while the navigation lands
+      setPending(true);
+      router.push(`/session/${active.session_id}`);
+      return;
+    }
     setConceptId(id);
     // Let the selection highlight land, then glide to step 2.
     if (advanceTimer.current !== null) clearTimeout(advanceTimer.current);

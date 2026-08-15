@@ -57,6 +57,28 @@ export function loadActiveStoredSessions(): StoredSession[] {
   return Object.values(loadAll()).filter((s) => s.status === "active");
 }
 
+/**
+ * The most recent still-active session this browser holds for one concept,
+ * or null. Lets the graph page resume an unfinished session — with its chat
+ * history — instead of silently starting a new one (ADR-0004).
+ */
+export function findActiveSession(
+  graphId: string,
+  conceptId: string,
+): StoredSession | null {
+  const matches = Object.keys(loadAll())
+    .map((id) => loadStoredSession(id)) // normalizes legacy graph fields
+    .filter((s): s is StoredSession => s !== null)
+    .filter(
+      (s) =>
+        s.status === "active" &&
+        s.graph_id === graphId &&
+        s.concept.id === conceptId,
+    )
+    .sort((a, b) => b.created_at.localeCompare(a.created_at));
+  return matches[0] ?? null;
+}
+
 export function saveStoredSession(session: StoredSession) {
   const all = loadAll();
   all[session.session_id] = session;

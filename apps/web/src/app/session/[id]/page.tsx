@@ -643,7 +643,7 @@ export default function SessionPage() {
             </h1>
             <p className="text-xs text-muted-foreground">
               Teaching {mode.name} · {mode.label} · Turn{" "}
-              {view.learner_turn_count}/8
+              {view.learner_turn_count}
             </p>
           </div>
           <div className="hidden w-48 shrink-0 items-center gap-2 sm:flex">

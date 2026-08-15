@@ -1,13 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   clearGraphLocalState,
+  findActiveSession,
   loadGraphArrangement,
   loadMastery,
   recordMastery,
   saveGraphArrangement,
+  saveStoredSession,
   sessionFromSnapshot,
 } from "./session-store";
-import type { SessionSnapshot } from "./types";
+import type { SessionSnapshot, StoredSession } from "./types";
 import { BUILTIN_GRAPH_ID } from "./types";
 
 // session-store guards on `typeof window`, so give the node test runtime a
@@ -246,5 +248,73 @@ describe("sessionFromSnapshot", () => {
     });
     expect(freeform.graph_id).toBe("66bcd1f2a9c4e35d8f01a2b4");
     expect(freeform.graph_update?.created).toBe(true);
+  });
+});
+
+function makeStored(overrides: Partial<StoredSession>): StoredSession {
+  return {
+    session_id: "session-1",
+    graph_id: BUILTIN_GRAPH_ID,
+    concept: { id: "gradient-descent", title: "Gradient Descent" },
+    mode: "confident",
+    messages: [],
+    progress: { percent: 40 },
+    learner_turn_count: 1,
+    status: "active",
+    end_reason: null,
+    active_misconception: null,
+    covered_points: [],
+    report: null,
+    graph_update: null,
+    created_at: "2026-08-15T09:30:00Z",
+    ...overrides,
+  };
+}
+
+describe("findActiveSession", () => {
+  it("returns the most recent active session for the concept", () => {
+    saveStoredSession(
+      makeStored({ session_id: "older", created_at: "2026-08-14T09:00:00Z" }),
+    );
+    saveStoredSession(
+      makeStored({ session_id: "newer", created_at: "2026-08-15T09:00:00Z" }),
+    );
+
+    expect(
+      findActiveSession(BUILTIN_GRAPH_ID, "gradient-descent")?.session_id,
+    ).toBe("newer");
+  });
+
+  it("ignores ended sessions and other graphs or concepts", () => {
+    saveStoredSession(
+      makeStored({ session_id: "done", status: "ended", end_reason: "mastery" }),
+    );
+    saveStoredSession(
+      makeStored({ session_id: "other-graph", graph_id: "graph-b" }),
+    );
+    saveStoredSession(
+      makeStored({
+        session_id: "other-concept",
+        concept: { id: "overfitting", title: "Overfitting" },
+      }),
+    );
+
+    expect(findActiveSession(BUILTIN_GRAPH_ID, "gradient-descent")).toBeNull();
+    expect(findActiveSession("graph-b", "gradient-descent")?.session_id).toBe(
+      "other-graph",
+    );
+  });
+
+  it("treats a legacy session without graph fields as builtin", () => {
+    const legacy = Object.fromEntries(
+      Object.entries(makeStored({ session_id: "legacy" })).filter(
+        ([key]) => key !== "graph_id" && key !== "graph_update",
+      ),
+    );
+    store.set("pfad:sessions", JSON.stringify({ legacy }));
+
+    expect(
+      findActiveSession(BUILTIN_GRAPH_ID, "gradient-descent")?.session_id,
+    ).toBe("legacy");
   });
 });
