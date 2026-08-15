@@ -176,6 +176,7 @@ class SessionOrchestrator:
                     state=state,
                     transcript=transcript,
                     learner_text=request.learner_text,
+                    mode=mode,
                 )
             except GenerationError as error:
                 # Nothing persisted: the session stays in its pre-turn state (AC-ERR-6).

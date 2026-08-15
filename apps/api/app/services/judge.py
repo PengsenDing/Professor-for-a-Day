@@ -12,6 +12,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from ..config import get_settings
 from ..curriculum.rubrics import Rubric
+from ..schemas import Mode
 from .evaluation import JudgeEvaluation
 from .exceptions import GenerationError
 from .llm import get_role_chat_model, resolve_model
@@ -19,9 +20,34 @@ from .scoring import ScoringState
 
 logger = logging.getLogger(__name__)
 
+# The session's AI Student mode doubles as its difficulty level: beginner sessions
+# are graded leniently, skeptic sessions strictly. The rubric itself is identical
+# across modes — only the bar for counting a point as demonstrated moves.
+_MODE_STRICTNESS: dict[Mode, str] = {
+    Mode.beginner: (
+        "Grading standard for this session: LENIENT (the teacher is explaining to a "
+        "beginner student). Confirm a point when the learner's own words convey its "
+        "essential idea, even if the wording is informal, imprecise, or incomplete at "
+        "the edges — do not withhold a point for missing jargon or textbook phrasing. "
+        "Never confirm a point whose essential idea is absent or wrong."
+    ),
+    Mode.confident: (
+        "Grading standard for this session: STANDARD. Confirm a point when the "
+        "learner's own words clearly demonstrate its evidence criterion."
+    ),
+    Mode.skeptic: (
+        "Grading standard for this session: STRICT (the teacher chose the hardest "
+        "student). Confirm a point only when the learner's own words demonstrate its "
+        "evidence criterion precisely and completely — a passing mention or a vague "
+        "gesture at the idea is not enough."
+    ),
+}
+
 _SYSTEM_PROMPT = """You are the Judge in a learning-by-teaching app. A learner plays \
 teacher and explains one machine-learning concept to an AI student. You evaluate ONLY \
 the learner's newest explanation against the rubric below.
+
+{strictness}
 
 Rules:
 - Confirm a rubric point only when the learner's own words demonstrate it per its \
@@ -51,6 +77,7 @@ class JudgeAdapter:
         state: ScoringState,
         transcript: list[tuple[str, str]],
         learner_text: str,
+        mode: Mode,
     ) -> JudgeEvaluation:
         # The Judge classifies against closed id sets, so it runs cold (temperature 0
         # by default) for consistent verdicts across sessions.
@@ -59,7 +86,7 @@ class JudgeAdapter:
             resolve_model(), settings.judge_temperature, settings.judge_reasoning_effort
         ).with_structured_output(JudgeEvaluation)
         messages = [
-            SystemMessage(content=_SYSTEM_PROMPT),
+            SystemMessage(content=_SYSTEM_PROMPT.format(strictness=_MODE_STRICTNESS[mode])),
             HumanMessage(content=_render_context(rubric, state, transcript, learner_text)),
         ]
 

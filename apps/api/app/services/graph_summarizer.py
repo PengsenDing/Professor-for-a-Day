@@ -30,9 +30,9 @@ logger = logging.getLogger(__name__)
 
 _CONCEPT_ID_PATTERN = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 
-_SYSTEM_PROMPT = """You distill a teaching conversation into a knowledge graph for a \
-learning-by-teaching app. A learner played teacher and explained a concept to an AI \
-student. Write in English.
+_SYSTEM_PROMPT = """You are the knowledge-graph summarizer in a learning-by-teaching \
+app: you distill a teaching conversation into a knowledge graph. A learner played \
+teacher and explained a concept to an AI student. Write in English.
 
 From the conversation, extract:
 - `graph_title`: a short display title for the overall subject area the taught concept \

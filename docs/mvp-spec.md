@@ -107,7 +107,7 @@ The learner sees a non-decreasing session progress bar. A concept reaches 100% o
 - The application derives progress from confirmed rubric coverage. The Judge does not invent an unconstrained percentage.
 - Confirmed rubric points remain confirmed for the rest of the Teaching Session, making progress monotonic.
 - Reaching 100% requires all required learning points and successful resolution of the misconception challenge posed during the session. An unresolved misconception gates completion even if all points have been mentioned.
-- Beginner, Confident, and Skeptic change question style and depth but do not change the rubric or scoring standard.
+- Beginner, Confident, and Skeptic change question style and depth, and set the Judge's grading strictness: Beginner is graded leniently, Confident at the standard bar, Skeptic strictly. The rubric itself is identical across modes.
 
 ### AI Student and Judge orchestration
 
@@ -197,7 +197,6 @@ The learner sees a non-decreasing session progress bar. A concept reaches 100% o
 - Real-time full-duplex speech, interruption, wake-word detection, and continuous microphone streaming.
 - Persisting raw recordings or generated audio.
 - Additional AI Student personalities beyond Beginner, Confident, and Skeptic.
-- Easier scoring standards for Beginner or harder scoring standards for Skeptic.
 - Sessions longer than eight learner turns.
 - Production analytics, educator dashboards, classroom management, social sharing, leaderboards, and achievements beyond the single completion animation.
 - Automated rubric authoring or curriculum-management tooling.

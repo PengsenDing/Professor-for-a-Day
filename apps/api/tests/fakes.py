@@ -161,7 +161,7 @@ class FakeJudge:
     def queue(self, *evaluations: JudgeEvaluation) -> None:
         self.responses.extend(evaluations)
 
-    async def evaluate(self, *, rubric, state, transcript, learner_text) -> JudgeEvaluation:
+    async def evaluate(self, *, rubric, state, transcript, learner_text, mode) -> JudgeEvaluation:
         self.call_log.append("judge")
         self.calls.append(
             {
@@ -169,6 +169,7 @@ class FakeJudge:
                 "state": state,
                 "transcript": list(transcript),
                 "learner_text": learner_text,
+                "mode": mode,
             }
         )
         if self.fail:

@@ -164,6 +164,15 @@ def test_judge_receives_cumulative_transcript_and_state(harness) -> None:
     assert rubric.points[0].id in second_call["state"].confirmed_point_ids
 
 
+@pytest.mark.parametrize("mode", ["beginner", "confident", "skeptic"])
+def test_judge_receives_the_session_mode_as_its_difficulty(harness, mode) -> None:
+    """The mode doubles as the grading difficulty, so it must reach the Judge."""
+    session = start(harness, mode=mode)
+    submit(harness, session["session_id"])
+
+    assert harness.judge.calls[0]["mode"].value == mode
+
+
 def test_student_receives_probe_and_misconception_directives(harness) -> None:
     session = start(harness)
     submit(harness, session["session_id"])

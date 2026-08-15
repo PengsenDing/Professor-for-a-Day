@@ -41,6 +41,7 @@ async def test_judge_and_student_produce_parseable_output_live() -> None:
             "parameters and repeatedly steps in the opposite direction, scaled by the "
             "learning rate, until the loss stops improving."
         ),
+        mode=Mode.confident,
     )
     assert evaluation.recommended_next_probe
 

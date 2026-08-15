@@ -176,8 +176,9 @@ Three modes, selected at session start (`Mode` enum: `beginner`, `confident`, `s
 - **Skeptic** — challenges causal claims, assumptions, transfer, counterexamples, and
   edge cases.
 
-Mode changes question style and depth only. It never changes the rubric or the scoring
-standard, so scores stay comparable across modes.
+Mode changes question style and depth, and sets the Judge's grading strictness:
+Beginner is graded leniently, Confident at the standard bar, Skeptic strictly. The
+rubric itself is identical across modes.
 
 ## 6. Rubrics, scoring, and orchestration
 
@@ -299,7 +300,6 @@ graph database or server-side Mastery storage; hard prerequisite locks; graph
 management beyond deleting a user graph (renaming, editing, merging, export);
 languages other than English;
 voice selection or cloning; real-time full-duplex speech; persisting raw or generated
-audio; AI Student personalities beyond the three modes; mode-dependent scoring
-standards; sessions longer than eight learner turns; analytics, dashboards, social
+audio; AI Student personalities beyond the three modes; sessions longer than eight learner turns; analytics, dashboards, social
 features, leaderboards; automated rubric authoring. Do not implement any of these
 unless explicitly requested.

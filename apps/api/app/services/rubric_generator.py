@@ -20,9 +20,10 @@ from .slug import slugify
 
 logger = logging.getLogger(__name__)
 
-_SYSTEM_PROMPT = """You author a hidden evaluation rubric for a learning-by-teaching app. \
-A learner will play teacher and explain the given concept to an AI student; a Judge will \
-score the explanation against your rubric. Write in English.
+_SYSTEM_PROMPT = """You are the curriculum author in a learning-by-teaching app: you \
+author a hidden evaluation rubric. A learner will play teacher and explain the given \
+concept to an AI student; a Judge will score the explanation against your rubric. Write \
+in English.
 
 Produce:
 - 3 to 5 required learning points. Each `description` is an evidence criterion: what the \
