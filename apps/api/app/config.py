@@ -61,10 +61,6 @@ class Settings(BaseSettings):
     judge_reasoning_effort: ReasoningEffort = "medium"
     student_reasoning_effort: ReasoningEffort = "low"
 
-    # Kill switch for the Student Critic (the semantic reviewer of AI Student
-    # replies). Off = the pipeline behaves exactly as before the critic existed.
-    student_critic_enabled: bool = True
-
     log_level: str = "INFO"
 
 
