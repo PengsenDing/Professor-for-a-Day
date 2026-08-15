@@ -232,6 +232,22 @@ class SessionFinished(BaseModel):
     )
 
 
+class TurnHint(BaseModel):
+    """Learner-safe guidance for responding to one AI Student statement."""
+
+    turn_number: Annotated[int, Field(ge=0)] = Field(
+        description="The AI Student turn this hint responds to. `0` is the opening question."
+    )
+    hint: str = Field(
+        min_length=1,
+        description=(
+            "Learner-safe guidance on how to respond to this AI Student "
+            "statement. Never rubric content, Judge reasoning, or the "
+            "correct answer."
+        ),
+    )
+
+
 class SnapshotTurn(BaseModel):
     turn_number: Annotated[int, Field(ge=1)]
     learner_transcript: str = Field(description="The learner text that was judged.")

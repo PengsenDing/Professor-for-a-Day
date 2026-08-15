@@ -18,6 +18,7 @@ from .repositories.sessions import SessionRepository
 from .schemas import ErrorCode
 from .services.graph_summarizer import GraphSummarizerAdapter
 from .services.graphs import GraphService
+from .services.hint import HintAdapter
 from .services.judge import JudgeAdapter
 from .services.orchestrator import SessionOrchestrator
 from .services.rubric_generator import RubricGeneratorAdapter
@@ -51,6 +52,10 @@ def get_student() -> StudentAdapter:
     return StudentAdapter()
 
 
+def get_hint() -> HintAdapter:
+    return HintAdapter()
+
+
 def get_rubric_generator() -> RubricGeneratorAdapter:
     return RubricGeneratorAdapter()
 
@@ -79,12 +84,14 @@ def get_orchestrator(
     judge: Annotated[JudgeAdapter, Depends(get_judge)],
     student: Annotated[StudentAdapter, Depends(get_student)],
     graph_service: Annotated[GraphService, Depends(get_graph_service)],
+    hint: Annotated[HintAdapter, Depends(get_hint)],
 ) -> SessionOrchestrator:
     return SessionOrchestrator(
         repository=repository,
         judge=judge,
         student=student,
         graph_service=graph_service,
+        hint=hint,
     )
 
 

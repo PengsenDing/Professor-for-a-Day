@@ -1,6 +1,7 @@
 """Teaching Session routes.
 
-`startSession`, `getSession`, `submitTurn`, `getTurnSpeech`, `finishSession`.
+`startSession`, `getSession`, `submitTurn`, `getTurnSpeech`, `getTurnHint`,
+`finishSession`.
 """
 
 from typing import Annotated
@@ -18,6 +19,7 @@ from ..schemas import (
     StartSessionRequest,
     SubmitTurnRequest,
     TurnEnvelope,
+    TurnHint,
 )
 from ..services.exceptions import SpeechSynthesisError
 from ..services.speech import SpeechService, get_speech_service
@@ -32,7 +34,7 @@ TurnNumber = Annotated[
     int,
     Path(
         ge=0,
-        description="The AI Student reply to synthesize. `0` is the opening question.",
+        description="The AI Student reply this operation targets. `0` is the opening question.",
     ),
 ]
 
@@ -115,6 +117,25 @@ async def get_turn_speech(
             502, ErrorCode.SPEECH_FAILED, "Speech synthesis is temporarily unavailable."
         ) from error
     return Response(content=audio, media_type="audio/mpeg")
+
+
+@router.get(
+    "/api/sessions/{session_id}/turns/{turn_number}/hint",
+    operation_id="getTurnHint",
+    response_model=TurnHint,
+    responses={
+        404: {"model": ErrorEnvelope},
+        502: {"model": ErrorEnvelope},
+        503: {"model": ErrorEnvelope},
+    },
+)
+async def get_turn_hint(
+    session_id: SessionId,
+    turn_number: TurnNumber,
+    orchestrator: OrchestratorDep,
+) -> TurnHint:
+    """One learner-safe hint for an AI Student statement: generated once, then replayed."""
+    return await orchestrator.hint_for_turn(session_id, turn_number)
 
 
 @router.post(

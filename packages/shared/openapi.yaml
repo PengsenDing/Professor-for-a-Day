@@ -26,6 +26,12 @@ info:
       enumerated, provider-neutral `code`. Vendors, models, upstream statuses,
       and upstream error text never appear in a response.
     - Turn submissions are idempotent via a client-generated `client_turn_id`.
+    - Hints are fetched on demand: `GET
+      /api/sessions/{session_id}/turns/{turn_number}/hint` returns one
+      learner-safe teaching hint for that AI Student statement. The hint is
+      generated on first fetch, stored with the turn, and replayed on repeat
+      fetches. Hints never affect Session Progress and never reveal rubric
+      content, Judge reasoning, or the correct answer.
     - Sessions are resumable: `GET /api/sessions/{session_id}` returns a
       learner-safe snapshot of any session — active or ended — without invoking
       any provider (see docs/adr/0004-sessions-are-resumable-via-get.md). Judge
@@ -507,6 +513,52 @@ paths:
         "503":
           $ref: "#/components/responses/DatabaseUnavailable"
 
+  /api/sessions/{session_id}/turns/{turn_number}/hint:
+    get:
+      tags: [sessions]
+      operationId: getTurnHint
+      summary: Get a teaching hint for one AI Student statement
+      description: |
+        Returns one short, learner-safe hint on how to respond to the stored
+        AI Student statement of the given turn — a nudge about what to address
+        or how to structure the explanation, never the explanation itself.
+        `turn_number: 0` is the session's opening question.
+
+        The hint is generated on the first fetch and stored with the turn, so
+        repeat fetches replay the same hint without another language-model
+        call. Requesting a hint never mutates session state otherwise: it does
+        not create a turn, does not change Session Progress, and works on
+        ended sessions. Hints never reveal rubric content, Judge reasoning, or
+        the correct answer.
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+        - $ref: "#/components/parameters/TurnNumber"
+      responses:
+        "200":
+          description: The learner-safe hint for this turn.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TurnHint"
+              example:
+                turn_number: 2
+                hint: "The student is stuck on why the step size matters — try walking through what happens to the update when the learning rate is very large versus very small."
+        "404":
+          description: Unknown session, or the session has no such turn.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+              examples:
+                session:
+                  value: { error: { code: SESSION_NOT_FOUND, message: "No such session." } }
+                turn:
+                  value: { error: { code: TURN_NOT_FOUND, message: "The session has no such turn." } }
+        "502":
+          $ref: "#/components/responses/GenerationFailed"
+        "503":
+          $ref: "#/components/responses/DatabaseUnavailable"
+
   /api/sessions/{session_id}/finish:
     post:
       tags: [sessions]
@@ -629,7 +681,7 @@ components:
       name: turn_number
       in: path
       required: true
-      description: The AI Student reply to synthesize. `0` is the opening question; `n` is the reply produced by learner turn `n`.
+      description: The AI Student reply this operation targets. `0` is the opening question; `n` is the reply produced by learner turn `n`.
       schema:
         type: integer
         minimum: 0
@@ -1159,6 +1211,22 @@ components:
         mastery_achieved:
           type: boolean
           description: True if and only if final_percent is 100. Drives the accomplishment animation client-side.
+
+    TurnHint:
+      type: object
+      required: [turn_number, hint]
+      properties:
+        turn_number:
+          type: integer
+          minimum: 0
+          description: The AI Student turn this hint responds to. `0` is the opening question.
+        hint:
+          type: string
+          minLength: 1
+          description: |
+            Learner-safe guidance on how to respond to this AI Student
+            statement. Never rubric content, Judge reasoning, or the correct
+            answer.
 
     Transcription:
       type: object

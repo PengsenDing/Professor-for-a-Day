@@ -61,6 +61,9 @@ class SessionRepository:
             "resolved_misconception_ids": [],
             "introduced_misconception_summaries": [],
             "opening_text": student_text,
+            # Generated hints cache here on first fetch; turn hints live on the
+            # turn subdocument (`turns.$.hint`). Both are learner-safe text.
+            "opening_hint": None,
             "turns": [],
             "report": None,
             "final_score": None,
@@ -106,6 +109,24 @@ class SessionRepository:
                 "$inc": {"learner_turn_count": 1},
             },
         )
+        return result.modified_count == 1
+
+    async def set_turn_hint(self, session_id: str, turn_number: int, hint: str) -> bool:
+        """Cache one generated hint on its turn (`0` is the opening question).
+
+        Best-effort: a False return (unknown session or turn) only means the
+        hint is regenerated on the next fetch, never that the request failed.
+        """
+        object_id = _parse_id(session_id)
+        if object_id is None:
+            return False
+        if turn_number == 0:
+            filter_query: dict[str, Any] = {"_id": object_id}
+            update = {"$set": {"opening_hint": hint, "updated_at": _utcnow()}}
+        else:
+            filter_query = {"_id": object_id, "turns.turn_number": turn_number}
+            update = {"$set": {"turns.$.hint": hint, "updated_at": _utcnow()}}
+        result = await self._collection.update_one(filter_query, update)
         return result.modified_count == 1
 
     async def finish(

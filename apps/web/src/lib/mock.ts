@@ -23,6 +23,7 @@ import type {
   TeacherReport,
   Transcription,
   TurnEnvelope,
+  TurnHint,
 } from "./types";
 import {
   BUILTIN_GRAPH_ID,
@@ -187,6 +188,8 @@ interface MockSession {
   created_at?: string;
   /** Learner quote per covered point; absent in older stored sessions. */
   evidence_by_point?: Record<string, { quote: string; turn_number: number }>;
+  /** Generated hints keyed by turn number; absent in older stored sessions. */
+  hints?: Record<number, string>;
 }
 
 /** Pre-multi-graph stored sessions lack the new fields; read them as builtin. */
@@ -723,6 +726,29 @@ export async function mockGetTurnSpeech(
     "SPEECH_FAILED",
     502,
   );
+}
+
+export async function mockGetTurnHint(
+  sessionId: string,
+  turnNumber: number,
+): Promise<TurnHint> {
+  await delay(500);
+  const all = loadAll();
+  const session = requireSession(all, sessionId);
+  if (turnNumber < 0 || turnNumber > session.learner_turn_count) {
+    throw new ApiError("The session has no such turn.", "TURN_NOT_FOUND", 404);
+  }
+  session.hints ??= {};
+  let hint = session.hints[turnNumber];
+  if (!hint) {
+    hint =
+      turnNumber === 0
+        ? `Open with the one-sentence big picture of ${sessionTitle(session)} in plain words, then ground it in a concrete example.`
+        : "Pin down what the student's statement gets wrong or asks for, then answer it with one concrete example rather than a restated definition.";
+    session.hints[turnNumber] = hint;
+    saveAll(all);
+  }
+  return { turn_number: turnNumber, hint };
 }
 
 export async function mockTranscribeAudio(audio: Blob): Promise<Transcription> {

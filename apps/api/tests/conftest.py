@@ -34,6 +34,7 @@ def harness():
     from tests.fakes import (
         FakeGraphRepository,
         FakeGraphSummarizer,
+        FakeHint,
         FakeJudge,
         FakeRubricGenerator,
         FakeSessionRepository,
@@ -46,6 +47,7 @@ def harness():
     graph_repository = FakeGraphRepository()
     judge = FakeJudge(call_log)
     student = FakeStudent(call_log)
+    hint = FakeHint(call_log)
     rubric_generator = FakeRubricGenerator(call_log)
     summarizer = FakeGraphSummarizer(call_log)
     speech = FakeSpeechService()
@@ -56,6 +58,7 @@ def harness():
     app.dependency_overrides[dependencies.get_graph_repository] = lambda: graph_repository
     app.dependency_overrides[dependencies.get_judge] = lambda: judge
     app.dependency_overrides[dependencies.get_student] = lambda: student
+    app.dependency_overrides[dependencies.get_hint] = lambda: hint
     app.dependency_overrides[dependencies.get_rubric_generator] = lambda: rubric_generator
     app.dependency_overrides[dependencies.get_graph_summarizer] = lambda: summarizer
     app.dependency_overrides[speech_module.get_speech_service] = lambda: speech
@@ -68,6 +71,7 @@ def harness():
                 graph_repository=graph_repository,
                 judge=judge,
                 student=student,
+                hint=hint,
                 rubric_generator=rubric_generator,
                 summarizer=summarizer,
                 speech=speech,

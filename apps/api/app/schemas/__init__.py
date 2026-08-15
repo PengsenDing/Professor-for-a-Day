@@ -26,6 +26,7 @@ from .sessions import (
     SubmitTurnRequest,
     TeacherReport,
     TurnEnvelope,
+    TurnHint,
 )
 from .speech import Transcription
 
@@ -62,4 +63,5 @@ __all__ = [
     "TeacherReport",
     "Transcription",
     "TurnEnvelope",
+    "TurnHint",
 ]

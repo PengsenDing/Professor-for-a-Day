@@ -37,6 +37,7 @@ COMPARED_COMPONENTS = [
     "TeacherReport",
     "SessionFinished",
     "Transcription",
+    "TurnHint",
     # `Error` is inlined inside ErrorEnvelope in the contract, not a named component.
     "ErrorEnvelope",
 ]

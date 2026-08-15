@@ -185,6 +185,15 @@ export interface Transcription {
   transcript: string;
 }
 
+/**
+ * One learner-safe teaching hint for an AI Student statement. Generated on
+ * first fetch and replayed thereafter; never rubric content or the answer.
+ */
+export interface TurnHint {
+  turn_number: number;
+  hint: string;
+}
+
 export interface Health {
   ok: boolean;
   model: string;

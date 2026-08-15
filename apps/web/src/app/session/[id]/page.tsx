@@ -8,6 +8,7 @@ import {
   ArrowLeft,
   FileText,
   Flag,
+  Lightbulb,
   Loader2,
   Mic,
   RotateCcw,
@@ -33,6 +34,7 @@ import { CHARACTER_BY_MODE } from "@/lib/characters";
 import {
   finishSession,
   getSession,
+  getTurnHint,
   getTurnSpeech,
   IS_MOCK,
   startSession,
@@ -141,6 +143,13 @@ export default function SessionPage() {
   const [voiceNote, setVoiceNote] = useState<string | null>(null);
   const audioCache = useRef(new Map<number, string>());
   const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  // Per-turn teaching hints: fetched on demand (the server generates once and
+  // replays), cached here by turn number, toggled open/closed per message.
+  const [hints, setHints] = useState<Map<number, string>>(new Map());
+  const [visibleHints, setVisibleHints] = useState<Set<number>>(new Set());
+  const [hintPendingTurn, setHintPendingTurn] = useState<number | null>(null);
+  const [hintNote, setHintNote] = useState<string | null>(null);
 
   // Avatar "speaking" window while real TTS audio plays; the word-by-word
   // reveal covers the muted/failed-voice case (see avatarState below).
@@ -344,6 +353,38 @@ export default function SessionPage() {
       }
     },
     [attachAudio, detachAudio, detachAllAudio],
+  );
+
+  const toggleHint = useCallback(
+    async (sessionId: string, turnNumber: number) => {
+      setHintNote(null);
+      if (visibleHints.has(turnNumber)) {
+        setVisibleHints((prev) => {
+          const next = new Set(prev);
+          next.delete(turnNumber);
+          return next;
+        });
+        return;
+      }
+      if (hints.has(turnNumber)) {
+        setVisibleHints((prev) => new Set(prev).add(turnNumber));
+        return;
+      }
+      setHintPendingTurn(turnNumber);
+      try {
+        const { hint } = await getTurnHint(sessionId, turnNumber);
+        setHints((prev) => new Map(prev).set(turnNumber, hint));
+        setVisibleHints((prev) => new Set(prev).add(turnNumber));
+      } catch (err) {
+        // Non-blocking by contract: teaching continues without the hint.
+        setHintNote(
+          err instanceof Error ? err.message : "Hints are unavailable right now.",
+        );
+      } finally {
+        setHintPendingTurn(null);
+      }
+    },
+    [hints, visibleHints],
   );
 
   // A brand-new session (marker set by the home page) animates and speaks
@@ -779,6 +820,13 @@ export default function SessionPage() {
                 message={m}
                 session={view}
                 onSpeak={(turnNumber) => speak(view.session_id, turnNumber)}
+                onHint={(turnNumber) => void toggleHint(view.session_id, turnNumber)}
+                hint={
+                  m.turn_number !== undefined && visibleHints.has(m.turn_number)
+                    ? (hints.get(m.turn_number) ?? null)
+                    : null
+                }
+                hintPending={hintPendingTurn === m.turn_number}
                 revealText={revealTexts[m.id] ?? null}
                 onSkipReveal={() => skipReveal(m.id)}
               />
@@ -792,6 +840,9 @@ export default function SessionPage() {
                 }}
                 session={view}
                 onSpeak={(turnNumber) => speak(view.session_id, turnNumber)}
+                onHint={(turnNumber) => void toggleHint(view.session_id, turnNumber)}
+                hint={null}
+                hintPending={false}
                 revealText={revealTexts[pendingTurn.client_turn_id] ?? null}
                 onSkipReveal={() => skipReveal(pendingTurn.client_turn_id)}
               />
@@ -869,6 +920,9 @@ export default function SessionPage() {
             )}
             {voiceNote && (
               <p className="mb-2 text-xs text-amber-600">{voiceNote}</p>
+            )}
+            {hintNote && (
+              <p className="mb-2 text-xs text-amber-600">{hintNote}</p>
             )}
             <Textarea
               placeholder={
@@ -983,12 +1037,19 @@ function MessageBubble({
   message,
   session,
   onSpeak,
+  onHint,
+  hint,
+  hintPending,
   revealText,
   onSkipReveal,
 }: {
   message: ChatMessage;
   session: StoredSession;
   onSpeak: (turnNumber: number) => void;
+  onHint: (turnNumber: number) => void;
+  /** The loaded hint for this student turn while toggled open; null = hidden. */
+  hint: string | null;
+  hintPending: boolean;
   /** Visible prefix while the message reveals word by word; null = full text. */
   revealText: string | null;
   onSkipReveal: () => void;
@@ -1046,6 +1107,28 @@ function MessageBubble({
               <Volume2 className="size-3.5" />
             </button>
           )}
+          {message.turn_number !== undefined && (
+            <button
+              type="button"
+              className={cn(
+                "text-muted-foreground transition-colors hover:text-foreground",
+                hint !== null && "text-amber-500 hover:text-amber-600",
+              )}
+              aria-label={
+                hint !== null
+                  ? "Hide the hint"
+                  : "Get a hint for responding to this"
+              }
+              disabled={hintPending}
+              onClick={() => onHint(message.turn_number!)}
+            >
+              {hintPending ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : (
+                <Lightbulb className="size-3.5" />
+              )}
+            </button>
+          )}
         </div>
         <div
           {...skipProps}
@@ -1058,6 +1141,12 @@ function MessageBubble({
         >
           {text}
         </div>
+        {hint !== null && (
+          <div className="flex items-start gap-2 rounded-xl border border-amber-500/40 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:bg-amber-500/10 dark:text-amber-200">
+            <Lightbulb className="mt-0.5 size-3.5 shrink-0" />
+            <span>{hint}</span>
+          </div>
+        )}
       </div>
     </div>
   );

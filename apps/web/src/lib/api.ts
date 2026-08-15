@@ -19,6 +19,7 @@ import type {
   SubmitTurnRequest,
   Transcription,
   TurnEnvelope,
+  TurnHint,
 } from "./types";
 import {
   mockDeleteGraph,
@@ -26,6 +27,7 @@ import {
   mockGetGraphCurriculum,
   mockGetGraphs,
   mockGetSession,
+  mockGetTurnHint,
   mockGetTurnSpeech,
   mockStartSession,
   mockSubmitTurn,
@@ -183,6 +185,21 @@ export async function getTurnSpeech(
   } finally {
     clearTimeout(timer);
   }
+}
+
+/**
+ * GET /api/sessions/{session_id}/turns/{turn_number}/hint — one learner-safe
+ * hint for an AI Student statement (turn 0 = opening question). Generated on
+ * first fetch and replayed thereafter; never affects Session Progress.
+ */
+export function getTurnHint(
+  sessionId: string,
+  turnNumber: number,
+): Promise<TurnHint> {
+  if (IS_MOCK) return mockGetTurnHint(sessionId, turnNumber);
+  return request<TurnHint>(
+    `/api/sessions/${encodeURIComponent(sessionId)}/turns/${turnNumber}/hint`,
+  );
 }
 
 /**

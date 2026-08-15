@@ -73,6 +73,12 @@ class Settings(BaseSettings):
     judge_reasoning_effort: ReasoningEffort = "medium"
     student_reasoning_effort: ReasoningEffort = "low"
 
+    # The hint coach nudges the learner toward a better explanation. It sees only
+    # learner-visible conversation text (never the rubric or Judge output), phrases
+    # one short suggestion, and needs no depth — warm and shallow like the Student.
+    hint_temperature: float = Field(default=0.5, ge=0.0, le=2.0)
+    hint_reasoning_effort: ReasoningEffort = "low"
+
     # Knowledge-graph generation (ADR-0005): rubric authoring and session-end
     # graph summarization share one temperature/effort pair — both produce
     # structured teaching material, warmer than the Judge but cooler than the

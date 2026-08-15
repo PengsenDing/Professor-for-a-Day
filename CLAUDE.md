@@ -118,6 +118,7 @@ GET    /api/sessions/{session_id}                           # learner-safe sessi
 POST /api/sessions/{session_id}/turns                       # submit one learner explanation
 POST /api/sessions/{session_id}/finish                      # finish early -> Teacher Report (idempotent)
 GET  /api/sessions/{session_id}/turns/{turn_number}/speech  # synthesize one AI Student reply (audio/mpeg)
+GET  /api/sessions/{session_id}/turns/{turn_number}/hint    # one learner-safe teaching hint (generated once, then replayed)
 POST /api/speech/transcriptions                             # pure speech-to-text (multipart audio upload)
 ```
 
@@ -150,6 +151,12 @@ Contract behaviors to preserve:
 - **Speech is synthesized on fetch** (ADR-0003). JSON responses carry no audio. Turn 0
   is the opening question. Nothing is cached or persisted server-side; a muted client
   simply never calls the endpoint; synthesis failures affect only that endpoint.
+- **Hints are on-demand and learner-safe.** `GET
+  /api/sessions/{session_id}/turns/{turn_number}/hint` returns one coaching hint
+  for that AI Student statement, generated from learner-visible context only
+  (never the rubric or Judge output), stored on the turn after the first fetch,
+  and replayed thereafter. Hints never change progress or any other session
+  state, and never reveal the correct answer.
 - **Errors use a minimal envelope** `{"error": {"code", "message"}}` with an enumerated,
   provider-neutral `code` (`INVALID_CONCEPT`, `SESSION_ENDED`, `GENERATION_FAILED`,
   `TRANSCRIPTION_FAILED`, `SPEECH_FAILED`, `DB_UNAVAILABLE`, …). Vendors, models,
@@ -256,6 +263,8 @@ JUDGE_TEMPERATURE=
 STUDENT_TEMPERATURE=
 JUDGE_REASONING_EFFORT=
 STUDENT_REASONING_EFFORT=
+HINT_TEMPERATURE=                     # hint coach (learner-visible context only)
+HINT_REASONING_EFFORT=
 GRAPH_TEMPERATURE=                    # rubric generation + graph summarization
 GRAPH_REASONING_EFFORT=
 GRAPH_MAX_NEW_CONCEPTS_PER_SESSION=   # default: 8

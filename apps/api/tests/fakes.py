@@ -92,6 +92,7 @@ class FakeSessionRepository:
             "resolved_misconception_ids": [],
             "introduced_misconception_summaries": [],
             "opening_text": student_text,
+            "opening_hint": None,
             "turns": [],
             "report": None,
             "final_score": None,
@@ -123,6 +124,19 @@ class FakeSessionRepository:
         document.update(copy.deepcopy(session_fields))
         document["learner_turn_count"] += 1
         return True
+
+    async def set_turn_hint(self, session_id: str, turn_number: int, hint: str) -> bool:
+        document = self.sessions.get(session_id)
+        if document is None:
+            return False
+        if turn_number == 0:
+            document["opening_hint"] = hint
+            return True
+        for turn in document["turns"]:
+            if turn["turn_number"] == turn_number:
+                turn["hint"] = hint
+                return True
+        return False
 
     async def finish(
         self,
@@ -231,6 +245,38 @@ class FakeStudent:
         if press is not None:
             return f"I still think: {press.summary}"
         return "Interesting — can you tell me more?"
+
+
+class FakeHint:
+    HINT = "Try a concrete example that shows what the student's claim would predict."
+
+    def __init__(self, call_log: list[str]) -> None:
+        self.call_log = call_log
+        self.calls: list[dict[str, Any]] = []
+        self.fail = False
+
+    async def hint(
+        self,
+        *,
+        concept_title,
+        mode,
+        transcript,
+        student_text,
+        misconception_summary,
+    ) -> str:
+        self.call_log.append("hint")
+        self.calls.append(
+            {
+                "concept_title": concept_title,
+                "mode": mode,
+                "transcript": list(transcript),
+                "student_text": student_text,
+                "misconception_summary": misconception_summary,
+            }
+        )
+        if self.fail:
+            raise GenerationError("scripted hint failure")
+        return self.HINT
 
 
 class FakeGraphRepository:

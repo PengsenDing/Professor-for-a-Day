@@ -34,10 +34,12 @@ from ..schemas import (
     SubmitTurnRequest,
     TeacherReport,
     TurnEnvelope,
+    TurnHint,
 )
 from .evaluation import DemonstratedPoint
 from .exceptions import GenerationError
 from .graphs import BUILTIN_GRAPH_ID, GraphService
+from .hint import HintAdapter
 from .judge import JudgeAdapter
 from .report import EvidenceSource, build_report
 from .scoring import ScoringState, apply_evaluation, pose_misconception
@@ -62,11 +64,13 @@ class SessionOrchestrator:
         judge: JudgeAdapter,
         student: StudentAdapter,
         graph_service: GraphService,
+        hint: HintAdapter,
     ) -> None:
         self._repository = repository
         self._judge = judge
         self._student = student
         self._graphs = graph_service
+        self._hint = hint
 
     # -- session start ------------------------------------------------------
 
@@ -485,6 +489,42 @@ class SessionOrchestrator:
                 return turn["student_text"], document["mode"]
         raise ApiError(404, ErrorCode.TURN_NOT_FOUND, "The session has no such turn.")
 
+    # -- hint lookup ----------------------------------------------------------
+
+    async def hint_for_turn(self, session_id: str, turn_number: int) -> TurnHint:
+        """One learner-safe hint for an AI Student statement (AC-SEC-3 by construction).
+
+        The hint generator is handed only text the learner can already see —
+        the conversation up to that statement and the learner-safe
+        misconception summary — never the rubric or the Judge evaluation, so
+        hidden material cannot leak through this channel. Generated once,
+        cached on the turn, replayed on repeat fetches. Never mutates any
+        other session state; progress is untouched.
+        """
+        document = await self._get_or_404(session_id)
+        student_text, misconception_summary, cached, transcript = _hint_context(
+            document, turn_number
+        )
+        if cached:
+            return TurnHint(turn_number=turn_number, hint=cached)
+        try:
+            hint = await self._hint.hint(
+                concept_title=_concept_title(document),
+                mode=Mode(document["mode"]),
+                transcript=transcript,
+                student_text=student_text,
+                misconception_summary=misconception_summary,
+            )
+        except GenerationError as error:
+            raise ApiError(
+                502,
+                ErrorCode.GENERATION_FAILED,
+                "Hint generation is temporarily unavailable.",
+            ) from error
+        # Best-effort cache: a lost write only means the next fetch regenerates.
+        await self._repository.set_turn_hint(session_id, turn_number, hint)
+        return TurnHint(turn_number=turn_number, hint=hint)
+
     # -- helpers ------------------------------------------------------------
 
     async def _get_or_404(self, session_id: str) -> dict[str, Any]:
@@ -662,6 +702,26 @@ def _evidence_sources_from_document(document: dict[str, Any]) -> list[EvidenceSo
         )
         for turn in document["turns"]
     ]
+
+
+def _hint_context(
+    document: dict[str, Any], turn_number: int
+) -> tuple[str, str | None, str | None, list[tuple[str, str]]]:
+    """The learner-visible context for one hint: the AI Student statement, the
+    learner-safe misconception summary active at that turn, any cached hint,
+    and the conversation up to (excluding) that statement.
+    """
+    if turn_number == 0:
+        return document["opening_text"], None, document.get("opening_hint"), []
+    transcript: list[tuple[str, str]] = [("student", document["opening_text"])]
+    for turn in document["turns"]:
+        transcript.append(("teacher", turn["learner_text"]))
+        if turn["turn_number"] == turn_number:
+            active = turn.get("active_misconception") or None
+            summary = active["summary"] if active else None
+            return turn["student_text"], summary, turn.get("hint"), transcript
+        transcript.append(("student", turn["student_text"]))
+    raise ApiError(404, ErrorCode.TURN_NOT_FOUND, "The session has no such turn.")
 
 
 def _transcript_from_document(document: dict[str, Any]) -> list[tuple[str, str]]:
