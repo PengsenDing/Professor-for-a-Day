@@ -12,6 +12,7 @@ import type {
 
 const SESSIONS_KEY = "pfad:sessions";
 const MASTERY_KEY = "pfad:mastery";
+const GRAPH_ARRANGEMENT_KEY = "pfad:graph-arrangement";
 
 // ---------------------------------------------------------------------------
 // Session snapshots
@@ -128,4 +129,44 @@ export function recordMastery(conceptId: string, percent: number) {
     mastery[conceptId] = percent;
     window.localStorage.setItem(MASTERY_KEY, JSON.stringify(mastery));
   }
+}
+
+// ---------------------------------------------------------------------------
+// Knowledge-graph arrangement (where the learner last dragged the balls)
+
+/** World-space ball centers by concept id, as last arranged by the learner. */
+export type GraphArrangement = Record<string, [number, number, number]>;
+
+export function loadGraphArrangement(): GraphArrangement {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw: unknown = JSON.parse(
+      window.localStorage.getItem(GRAPH_ARRANGEMENT_KEY) ?? "{}",
+    );
+    if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+      return {};
+    }
+    // Keep only well-formed entries so a corrupt store degrades per ball
+    // (back to the computed layout), never into a crash.
+    const arrangement: GraphArrangement = {};
+    for (const [id, value] of Object.entries(raw)) {
+      if (
+        Array.isArray(value) &&
+        value.length === 3 &&
+        value.every((n) => typeof n === "number" && Number.isFinite(n))
+      ) {
+        arrangement[id] = value as [number, number, number];
+      }
+    }
+    return arrangement;
+  } catch {
+    return {};
+  }
+}
+
+export function saveGraphArrangement(arrangement: GraphArrangement) {
+  window.localStorage.setItem(
+    GRAPH_ARRANGEMENT_KEY,
+    JSON.stringify(arrangement),
+  );
 }

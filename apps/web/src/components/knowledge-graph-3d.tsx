@@ -11,6 +11,10 @@ import {
 } from "@react-three/fiber";
 import { Billboard, Line, OrbitControls, useCursor } from "@react-three/drei";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
+import {
+  loadGraphArrangement,
+  saveGraphArrangement,
+} from "@/lib/session-store";
 import type { Concept, Curriculum } from "@/lib/types";
 import { useIsDark } from "@/lib/use-is-dark";
 import { cn } from "@/lib/utils";
@@ -184,7 +188,7 @@ function addKick(
   vel[id] = [x * k, y * k, z * k];
 }
 
-/** Drives the ball-bump physics from the render loop. */
+/** Drives the per-frame position work (ball physics + hover dodge). */
 function PhysicsTicker({ step }: { step: (dt: number) => void }) {
   useFrame((_, dt) => step(dt));
   return null;
@@ -619,7 +623,41 @@ function useGlowTexture() {
   }, []);
 }
 
-const SCALE_TARGET = new THREE.Vector3();
+/**
+ * Hover feel (modeled on the Tripo onboarding hover): the ball pops up on a
+ * slightly underdamped spring — a quick swell with a small overshoot — while
+ * a soft radial light blooms in and expands behind it. On the dark page the
+ * bloom is a white spotlight switching on behind the ball; on the light page
+ * it is an airy aqua glow (echoing the water inside the balls) — light, not
+ * a shadow, so hovering never darkens the page.
+ */
+const HOVER_SCALE = 1.16;
+const DRAG_SCALE = 1.2;
+const SELECT_SCALE = 1.05;
+/** Spring constants for the scale pop (ζ≈0.64 → ~7% overshoot). */
+const SCALE_STIFFNESS = 130;
+const SCALE_DAMPING = 14.5;
+/** Full-size world extent of the hover bloom sprite. */
+const BLOOM_PLANE = NODE_RADIUS * 5.4;
+/** The bloom swells outward: it fades in from this fraction of full size. */
+const BLOOM_GROW_FROM = 0.7;
+const BLOOM_COLOR_DARK = "#ffffff";
+const BLOOM_COLOR_LIGHT = "#4cc4d8";
+const BLOOM_OPACITY_DARK = 0.6;
+const BLOOM_OPACITY_LIGHT = 0.75;
+
+/**
+ * While one ball is hovered (or dragged), the rest of the web gives way a
+ * little: every other ball eases away from the active one along the line
+ * between their centers — near neighbors the most — and drifts back once
+ * the hover ends. Purely visual: the dodge offsets are composed on top of
+ * the physics positions at publish time and never feed back into them, so
+ * hovering around the graph can never scatter the layout.
+ */
+const DODGE_STRENGTH = 0.6; // world units a touching neighbor gives way
+const DODGE_FALLOFF = 5; // falloff length of the push, in surface gap
+const DODGE_EASE_IN = 7; // how fast balls duck away
+const DODGE_EASE_OUT = 5; // how fast they drift back home
 
 /**
  * Render a concept title into a small canvas texture: wrapped, centered, and
@@ -758,6 +796,13 @@ function ConceptNode({
 
   const groupRef = useRef<THREE.Group>(null);
   const selectionRef = useRef<THREE.Mesh>(null);
+  const bloomRef = useRef<THREE.Sprite>(null);
+  const glassRef = useRef<THREE.MeshPhysicalMaterial>(null);
+  /** Spring state for the hover pop: current scale and its velocity. */
+  const scaleRef = useRef(1);
+  const scaleVelRef = useRef(0);
+  /** Bloom progress 0→1; opacity and swell are both derived from it. */
+  const bloomTRef = useRef(0);
   const dragPlane = useRef(new THREE.Plane());
   const dragOffset = useRef(new THREE.Vector3());
   const hitPoint = useRef(new THREE.Vector3());
@@ -774,11 +819,52 @@ function ConceptNode({
   // Smooth hover/drag scaling and water dynamics without re-rendering.
   // eslint-disable-next-line react-hooks/immutability -- three.js materials are driven by imperative uniform mutation from the render loop
   useFrame((state, rawDt) => {
+    const dt = Math.min(Math.max(rawDt, 1e-4), 0.05);
+    const active = hovered || dragging;
+
+    // The hover pop: a slightly underdamped spring toward the target scale,
+    // so the ball swells quickly, overshoots a touch, and settles.
     const group = groupRef.current;
     if (group) {
-      const target = dragging ? 1.14 : hovered ? 1.1 : selected ? 1.05 : 1;
-      group.scale.lerp(SCALE_TARGET.set(target, target, target), 0.18);
+      const target = dragging
+        ? DRAG_SCALE
+        : hovered
+          ? HOVER_SCALE
+          : selected
+            ? SELECT_SCALE
+            : 1;
+      const accel =
+        SCALE_STIFFNESS * (target - scaleRef.current) -
+        SCALE_DAMPING * scaleVelRef.current;
+      scaleVelRef.current += accel * dt;
+      scaleRef.current += scaleVelRef.current * dt;
+      group.scale.setScalar(scaleRef.current);
     }
+
+    // The bloom fades in faster than it fades out, and swells as it appears.
+    bloomTRef.current +=
+      ((active ? 1 : 0) - bloomTRef.current) *
+      (1 - Math.exp(-(active ? 10 : 5.5) * dt));
+    const bloom = bloomRef.current;
+    if (bloom) {
+      (bloom.material as THREE.SpriteMaterial).opacity =
+        bloomTRef.current * (dark ? BLOOM_OPACITY_DARK : BLOOM_OPACITY_LIGHT);
+      const size =
+        BLOOM_PLANE *
+        (BLOOM_GROW_FROM + (1 - BLOOM_GROW_FROM) * bloomTRef.current);
+      bloom.scale.set(size, size, 1);
+    }
+
+    // The glass brightens with the bloom instead of snapping between states.
+    const glass = glassRef.current;
+    if (glass) {
+      const ease = 1 - Math.exp(-9 * dt);
+      const opacity = active ? 0.35 : selected ? 0.3 : 0.24;
+      const emissive = active ? 0.17 : selected ? 0.08 : 0;
+      glass.opacity += (opacity - glass.opacity) * ease;
+      glass.emissiveIntensity += (emissive - glass.emissiveIntensity) * ease;
+    }
+
     // The selection ring breathes: a slow, subtle pulse of size + presence.
     const sel = selectionRef.current;
     if (sel) {
@@ -788,7 +874,6 @@ function ConceptNode({
     }
     if (!water) return;
 
-    const dt = Math.min(Math.max(rawDt, 1e-4), 0.05);
     const last = lastPosRef.current ?? position;
     const vx = (position[0] - last[0]) / dt;
     const vy = (position[1] - last[1]) / dt;
@@ -874,7 +959,7 @@ function ConceptNode({
               map={glowTexture}
               color={WATER_FULL_COLOR}
               transparent
-              opacity={hovered || dragging || selected ? 0.95 : 0.8}
+              opacity={selected ? 0.9 : 0.8}
               depthWrite={false}
             />
           </sprite>
@@ -887,10 +972,28 @@ function ConceptNode({
               map={haloTexture}
               transparent
               depthWrite={false}
-              opacity={hovered || dragging || selected ? 0.5 : 0.26}
+              opacity={selected ? 0.4 : 0.26}
             />
           </sprite>
         )}
+
+        {/* Hover bloom: the soft light that fades in and swells behind the
+            hovered ball (opacity + swell driven from useFrame). A white
+            spotlight on the dark page, an airy water-aqua glow on the light
+            one — always light, never a shadow. */}
+        <sprite
+          ref={bloomRef}
+          scale={[BLOOM_PLANE * BLOOM_GROW_FROM, BLOOM_PLANE * BLOOM_GROW_FROM, 1]}
+          raycast={() => null}
+        >
+          <spriteMaterial
+            map={glowTexture}
+            color={dark ? BLOOM_COLOR_DARK : BLOOM_COLOR_LIGHT}
+            transparent
+            opacity={0}
+            depthWrite={false}
+          />
+        </sprite>
 
         {/* The water inside the glass: its volume equals the best score.
             The clipped-sphere shader ripples with time and tilts against
@@ -941,14 +1044,15 @@ function ConceptNode({
         >
           <sphereGeometry args={[NODE_RADIUS, 48, 48]} />
           <meshPhysicalMaterial
+            ref={glassRef}
             color="#f8fafc"
             transparent
-            opacity={hovered || dragging ? 0.34 : selected ? 0.3 : 0.24}
+            opacity={0.24}
             roughness={0.12}
             clearcoat={1}
             clearcoatRoughness={0.15}
             emissive="#555555"
-            emissiveIntensity={hovered || dragging ? 0.14 : selected ? 0.08 : 0}
+            emissiveIntensity={0}
             depthWrite={false}
           />
         </mesh>
@@ -1075,37 +1179,93 @@ export function KnowledgeGraph3D({
   const ordered = useMemo(() => computeLayers(curriculum).flat(), [curriculum]);
   const layout = useMemo(() => simulateLayout3D(curriculum), [curriculum]);
 
-  const [positions, setPositions] = useState<Record<string, Vec3>>(() =>
-    Object.fromEntries(layout.positions),
-  );
+  // The learner's last arrangement, restored browser-locally so dragging the
+  // web around survives a reload. Restored balls keep their saved spot;
+  // concepts without one (or a cleared store) fall back to the computed
+  // layout. Saved positions came from live drag/physics state, which always
+  // enforces MIN_SEPARATION, so the restored web is collision-free too. The
+  // camera must frame the restored arrangement, hence the recomputed
+  // points/radius.
+  const initial = useMemo(() => {
+    const stored = loadGraphArrangement();
+    const positions: Record<string, Vec3> = {};
+    for (const [id, p] of layout.positions) {
+      positions[id] = stored[id] ?? p;
+    }
+    const points = Object.values(positions);
+    let radius = 0;
+    for (const [x, y, z] of points) {
+      radius = Math.max(radius, Math.hypot(x, y, z));
+    }
+    return { positions, points, radius: radius + NODE_RADIUS + 1.4 };
+  }, [layout]);
+
+  const [positions, setPositions] = useState<Record<string, Vec3>>(() => ({
+    ...initial.positions,
+  }));
   // Mutable mirror of the positions: the physics tick and the drag handler
   // both work on this map, then publish a snapshot into React state.
-  const positionsRef = useRef<Record<string, Vec3>>(
-    Object.fromEntries(layout.positions),
-  );
+  const positionsRef = useRef<Record<string, Vec3>>({ ...initial.positions });
   /** Per-ball velocity in world units/second; absent key = at rest. */
   const velocitiesRef = useRef<Record<string, Vec3>>({});
+  /** Visual dodge offsets (world units) per ball; absent key = zero. */
+  const dodgeRef = useRef<Record<string, Vec3>>({});
+  /** True after the learner moves any ball, until the arrangement is saved. */
+  const arrangementDirtyRef = useRef(false);
   const draggingRef = useRef<string | null>(null);
+  /** Mirror of the hovered id for the render-loop ticker. */
+  const hoveredRef = useRef<string | null>(null);
   /** Smoothed pointer velocity of the ball being dragged. */
   const dragVelRef = useRef<Vec3>([0, 0, 0]);
   const lastDragSampleRef = useRef<{ t: number; pos: Vec3 } | null>(null);
 
   // Re-seed the live positions if the curriculum (and thus the layout) changes.
-  const [seededLayout, setSeededLayout] = useState(layout);
-  if (layout !== seededLayout) {
-    setSeededLayout(layout);
-    setPositions(Object.fromEntries(layout.positions));
+  const [seededInitial, setSeededInitial] = useState(initial);
+  if (initial !== seededInitial) {
+    setSeededInitial(initial);
+    setPositions({ ...initial.positions });
   }
   // Refs can't be reseeded during render; syncing them in an effect is fine —
   // physics only runs from events and frames, which happen after effects.
   useEffect(() => {
-    positionsRef.current = Object.fromEntries(layout.positions);
+    positionsRef.current = { ...initial.positions };
     velocitiesRef.current = {};
-  }, [layout]);
+    dodgeRef.current = {};
+    arrangementDirtyRef.current = false;
+  }, [initial]);
+
+  // If the graph unmounts while balls are still gliding (e.g. the learner
+  // picks a concept mid-settle), persist what's there rather than losing
+  // the arrangement they just made.
+  useEffect(() => {
+    return () => {
+      if (arrangementDirtyRef.current) {
+        saveGraphArrangement(positionsRef.current);
+      }
+    };
+  }, []);
 
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const controlsRef = useRef<OrbitControlsImpl | null>(null);
+
+  const handleHover = useCallback((id: string | null) => {
+    hoveredRef.current = id;
+    setHoveredId(id);
+  }, []);
+
+  /** Publish base positions + dodge offsets to React for rendering. */
+  const publishPositions = useCallback(() => {
+    const base = positionsRef.current;
+    const dodge = dodgeRef.current;
+    const out: Record<string, Vec3> = {};
+    for (const id of Object.keys(base)) {
+      const p = base[id];
+      const d = dodge[id];
+      out[id] = d ? [p[0] + d[0], p[1] + d[1], p[2] + d[2]] : p;
+    }
+    setPositions(out);
+  }, []);
 
   const dark = useIsDark();
   const haloTexture = useHaloTexture(dark);
@@ -1244,22 +1404,23 @@ export function KnowledgeGraph3D({
           }
         }
       }
-      setPositions({ ...map });
+      arrangementDirtyRef.current = true;
+      publishPositions();
     },
-    [adjacency],
+    [adjacency, publishPositions],
   );
 
   /**
    * Per-frame ball physics: integrate the velocities handed out by moveNode
    * (and by release throws), damp them like felt friction, and resolve
    * ball-on-ball collisions with restitution so a bumped ball can pass the
-   * bump on. Idle when every ball is at rest — the common case.
+   * bump on. Idle when every ball is at rest — the common case. Returns
+   * whether any ball moved; publishing is left to the caller.
    */
-  const stepPhysics = useCallback((rawDt: number) => {
+  const stepPhysics = useCallback((dt: number): boolean => {
     const vel = velocitiesRef.current;
     const movingIds = Object.keys(vel);
-    if (movingIds.length === 0) return;
-    const dt = Math.min(rawDt, 0.05);
+    if (movingIds.length === 0) return false;
     const map = positionsRef.current;
     const held = draggingRef.current;
     const decay = Math.exp(-BUMP_DAMPING * dt);
@@ -1335,8 +1496,75 @@ export function KnowledgeGraph3D({
         }
       }
     }
-    setPositions({ ...map });
+    return true;
   }, []);
+
+  /**
+   * Ease every ball's dodge offset toward its target — away from the active
+   * (hovered or dragged) ball with distance falloff, or back to zero when
+   * nothing is active. Returns whether any offset visibly changed; settled
+   * offsets snap exactly and zeroed entries are dropped, so an idle graph
+   * (and a steadily held hover) costs nothing.
+   */
+  const stepDodge = useCallback((dt: number): boolean => {
+    const src = draggingRef.current ?? hoveredRef.current;
+    const dodge = dodgeRef.current;
+    const map = positionsRef.current;
+    const active = src ? map[src] : undefined;
+    if (!active && Object.keys(dodge).length === 0) return false;
+
+    const ease = 1 - Math.exp(-(active ? DODGE_EASE_IN : DODGE_EASE_OUT) * dt);
+    let changed = false;
+    for (const id of Object.keys(map)) {
+      let tx = 0;
+      let ty = 0;
+      let tz = 0;
+      if (active && id !== src) {
+        const p = map[id];
+        const dx = p[0] - active[0];
+        const dy = p[1] - active[1];
+        const dz = p[2] - active[2];
+        const dist = Math.max(0.001, Math.hypot(dx, dy, dz));
+        const gap = Math.max(0, dist - MIN_SEPARATION);
+        const k = DODGE_STRENGTH * Math.exp(-gap / DODGE_FALLOFF);
+        tx = (dx / dist) * k;
+        ty = (dy / dist) * k;
+        tz = (dz / dist) * k;
+      }
+      const cur = dodge[id] ?? VEC3_ZERO;
+      let nx = cur[0] + (tx - cur[0]) * ease;
+      let ny = cur[1] + (ty - cur[1]) * ease;
+      let nz = cur[2] + (tz - cur[2]) * ease;
+      if (Math.hypot(tx - nx, ty - ny, tz - nz) < 1e-3) {
+        nx = tx;
+        ny = ty;
+        nz = tz;
+      }
+      if (nx !== cur[0] || ny !== cur[1] || nz !== cur[2]) changed = true;
+      if (nx === 0 && ny === 0 && nz === 0) delete dodge[id];
+      else dodge[id] = [nx, ny, nz];
+    }
+    return changed;
+  }, []);
+
+  /** One render-loop tick: physics, then the dodge; publish once if needed. */
+  const stepFrame = useCallback(
+    (rawDt: number) => {
+      const dt = Math.min(rawDt, 0.05);
+      const moved = stepPhysics(dt);
+      if (moved) arrangementDirtyRef.current = true;
+      const dodged = stepDodge(dt);
+      if (moved || dodged) publishPositions();
+      // Persist the arrangement once the web is fully at rest again: after
+      // the drag has ended and every bumped ball has stopped gliding. One
+      // localStorage write per arrangement, not per frame.
+      if (!moved && !draggingRef.current && arrangementDirtyRef.current) {
+        arrangementDirtyRef.current = false;
+        saveGraphArrangement(positionsRef.current);
+      }
+    },
+    [stepPhysics, stepDodge, publishPositions],
+  );
 
   return (
     <>
@@ -1357,15 +1585,15 @@ export function KnowledgeGraph3D({
             <ambientLight intensity={0.9} />
             <directionalLight position={[6, 10, 8]} intensity={1.9} />
             <directionalLight position={[-8, -5, -6]} intensity={0.4} />
-            <FitCamera points={layout.points} radius={layout.radius} />
-            <PhysicsTicker step={stepPhysics} />
+            <FitCamera points={initial.points} radius={initial.radius} />
+            <PhysicsTicker step={stepFrame} />
             <OrbitControls
               ref={controlsRef}
               makeDefault
               enableDamping
               dampingFactor={0.12}
-              minDistance={layout.radius * 0.35}
-              maxDistance={layout.radius * 5}
+              minDistance={initial.radius * 0.35}
+              maxDistance={initial.radius * 5}
             />
             <Edges3D
               edges={curriculum.edges}
@@ -1386,7 +1614,7 @@ export function KnowledgeGraph3D({
                 glowTexture={glowTexture}
                 ringTexture={ringTexture}
                 onSelectNode={onSelect}
-                onHoverNode={setHoveredId}
+                onHoverNode={handleHover}
                 onDragStart={beginDrag}
                 onDrag={moveNode}
                 onDragEnd={endDrag}
