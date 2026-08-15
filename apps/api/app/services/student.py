@@ -136,6 +136,7 @@ class StudentAdapter:
         pose: RubricMisconception | None,
         press: RubricMisconception | None,
         session_ended: bool,
+        pose_trigger: str | None = None,
     ) -> str:
         conversation = "\n".join(f"{speaker}: {text}" for speaker, text in transcript)
         challenge = pose if pose is not None else press
@@ -161,6 +162,13 @@ class StudentAdapter:
                 f'You currently believe this: "{pose.belief}" It feels right to you '
                 f"because {pose.why_plausible} Do not correct yourself. {form}"
             )
+            if pose_trigger:
+                directives.append(
+                    "You reached this belief from the teacher's own words — they said: "
+                    f'"{pose_trigger}". Anchor your reply to that: show how their '
+                    "explanation led you to this conclusion (for example: "
+                    '"You said ..., so ...").'
+                )
         elif press is not None:
             form = (
                 "Push back by restating your belief as a confident conclusion. Do not "

@@ -145,11 +145,28 @@ class SessionOrchestrator:
             percent = max(result.percent, document["progress_percent"])  # monotonic
             ended, end_reason = self._exit_state(percent, turn_number)
 
+            # The mirror mechanism (A): the Judge may flag which tracked
+            # misconception the learner's own explanation invites. It is advice
+            # only — validated against the rubric here, and the orchestrator
+            # still decides whether anything is posed at all.
+            suggested_id = evaluation.most_likely_misconception_id
+            if suggested_id is not None and suggested_id not in rubric.misconception_ids():
+                logger.warning(
+                    "discarded hallucinated rubric id session_id=%s id=%s",
+                    session_id,
+                    suggested_id,
+                )
+                suggested_id = None
+
             # An ended session poses nothing new; an active one poses the next
             # challenge, or keeps pressing the outstanding one so the Student
             # cannot drift into conceding on its own (only the Judge resolves it).
             pose = (
-                None if ended else self._pick_misconception_to_pose(rubric, result.state, percent)
+                None
+                if ended
+                else self._pick_misconception_to_pose(
+                    rubric, result.state, percent, suggested_id
+                )
             )
             state_after = (
                 pose_misconception(result.state, pose.id) if pose is not None else result.state
@@ -157,6 +174,15 @@ class SessionOrchestrator:
             press: RubricMisconception | None = None
             if not ended and pose is None:
                 press = _rubric_misconception(rubric, state_after.active_misconception_id())
+
+            # The mirror mechanism (B): anchor the posed misconception to the
+            # learner's own words — but only when the quote is verbatim from the
+            # submission, so the Student can never misquote the teacher.
+            pose_trigger: str | None = None
+            if pose is not None and pose.id == suggested_id:
+                quote = evaluation.misconception_trigger_quote.strip()
+                if quote and quote in request.learner_text:
+                    pose_trigger = quote
 
             # The probe target is selected here, in code, as a learner-safe point
             # label. The Judge's free-text recommendation is persisted with the
@@ -182,6 +208,7 @@ class SessionOrchestrator:
                         learner_text=request.learner_text,
                         probe_focus=probe_focus,
                         pose=pose,
+                        pose_trigger=pose_trigger,
                         press=press,
                         session_ended=ended,
                     )
@@ -343,9 +370,14 @@ class SessionOrchestrator:
         return concept.title if concept else concept_id
 
     def _pick_misconception_to_pose(
-        self, rubric: Rubric, state: ScoringState, percent: int
+        self,
+        rubric: Rubric,
+        state: ScoringState,
+        percent: int,
+        suggested_id: str | None = None,
     ) -> RubricMisconception | None:
-        """Pose the first unposed rubric misconception once none is outstanding.
+        """Pose the Judge-suggested misconception when the learner's explanation
+        invites one; otherwise the first unposed, once none is outstanding.
 
         At least one challenge must be posed for mastery to be reachable
         (AC-JDG-8); one resolved challenge is sufficient, so nothing new is posed
@@ -355,6 +387,10 @@ class SessionOrchestrator:
             return None
         if state.active_misconception_id() is not None:
             return None
+        if suggested_id is not None and suggested_id not in state.posed_misconception_ids:
+            suggested = _rubric_misconception(rubric, suggested_id)
+            if suggested is not None:
+                return suggested
         for misconception in rubric.misconceptions:
             if misconception.id not in state.posed_misconception_ids:
                 return misconception

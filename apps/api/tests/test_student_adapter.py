@@ -39,6 +39,7 @@ async def reply(
     session_ended=False,
     mode=Mode.confident,
     learner_text="An explanation.",
+    pose_trigger=None,
 ) -> str:
     return await student.reply(
         rubric=gd_rubric(),
@@ -50,6 +51,7 @@ async def reply(
         pose=pose,
         press=press,
         session_ended=session_ended,
+        pose_trigger=pose_trigger,
     )
 
 
@@ -80,6 +82,29 @@ async def test_pose_prompt_carries_belief_and_plausibility() -> None:
     _, task = student.calls[0]
     assert misconception.belief in task
     assert misconception.why_plausible in task
+
+
+async def test_pose_trigger_anchors_the_directive_to_the_teachers_words() -> None:
+    misconception = gd_rubric().misconceptions[1]
+    student = ScriptedStudent(
+        ["You said it guides the model, so following it must lead straight to the minimum."]
+    )
+
+    await reply(student, pose=misconception, pose_trigger="the gradient guides the model")
+
+    _, task = student.calls[0]
+    assert '"the gradient guides the model"' in task
+    assert "the teacher's own words" in task
+
+
+async def test_pose_without_trigger_has_no_anchor_directive() -> None:
+    misconception = gd_rubric().misconceptions[1]
+    student = ScriptedStudent(["Following the gradient takes you straight to the minimum."])
+
+    await reply(student, pose=misconception)
+
+    _, task = student.calls[0]
+    assert "the teacher's own words" not in task
 
 
 async def test_press_prompt_forbids_conceding_and_carries_the_belief() -> None:

@@ -27,6 +27,8 @@ def make_evaluation(
     points: list[str] | None = None,
     corrected: list[str] | None = None,
     introduced: list[str] | None = None,
+    suggested: str | None = None,
+    trigger: str = "",
 ) -> JudgeEvaluation:
     return JudgeEvaluation(
         newly_demonstrated_points=[
@@ -39,6 +41,8 @@ def make_evaluation(
             IntroducedMisconception(summary=summary) for summary in introduced or []
         ],
         recommended_next_probe="Probe the next idea.",
+        most_likely_misconception_id=suggested,
+        misconception_trigger_quote=trigger,
     )
 
 
@@ -177,6 +181,7 @@ class FakeStudent:
         pose,
         press,
         session_ended,
+        pose_trigger=None,
     ) -> str:
         self.call_log.append("student_reply")
         self.reply_calls.append(
@@ -184,6 +189,7 @@ class FakeStudent:
                 "mode": mode,
                 "probe_focus": probe_focus,
                 "pose": pose,
+                "pose_trigger": pose_trigger,
                 "press": press,
                 "session_ended": session_ended,
                 "transcript": list(transcript),

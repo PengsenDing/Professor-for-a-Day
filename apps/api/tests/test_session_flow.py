@@ -154,6 +154,49 @@ def test_student_receives_probe_and_misconception_directives(harness) -> None:
     assert envelope["active_misconception"] is not None  # AC-TRN-12
 
 
+def test_judge_suggested_misconception_is_posed_with_the_trigger_quote(harness) -> None:
+    """The mirror mechanism: the misconception the learner's explanation invites is
+    the one posed, anchored to the learner's verbatim words."""
+    rubric = gd_rubric()
+    mirrored = rubric.misconceptions[1]  # not the file-order default
+    quote = "it helps you find the answer faster"
+    session = start(harness)
+    harness.judge.queue(make_evaluation(suggested=mirrored.id, trigger=quote))
+
+    submit(harness, session["session_id"], text=f"The gradient is a signal — {quote}.")
+
+    reply_call = harness.student.reply_calls[0]
+    assert reply_call["pose"].id == mirrored.id
+    assert reply_call["pose_trigger"] == quote
+
+
+def test_hallucinated_suggestion_falls_back_to_first_unposed_misconception(harness) -> None:
+    rubric = gd_rubric()
+    session = start(harness)
+    harness.judge.queue(make_evaluation(suggested="not-a-real-id", trigger="whatever"))
+
+    submit(harness, session["session_id"])
+
+    reply_call = harness.student.reply_calls[0]
+    assert reply_call["pose"].id == rubric.misconceptions[0].id
+    assert reply_call["pose_trigger"] is None
+
+
+def test_fabricated_trigger_quote_is_dropped(harness) -> None:
+    """A quote the learner never said must not be put in the Student's mouth."""
+    rubric = gd_rubric()
+    session = start(harness)
+    harness.judge.queue(
+        make_evaluation(suggested=rubric.misconceptions[1].id, trigger="words never said")
+    )
+
+    submit(harness, session["session_id"], text="An explanation without that quote.")
+
+    reply_call = harness.student.reply_calls[0]
+    assert reply_call["pose"].id == rubric.misconceptions[1].id  # selection still mirrors
+    assert reply_call["pose_trigger"] is None  # but the fabricated quote is dropped
+
+
 def test_probe_focus_is_an_uncovered_point_label_not_judge_free_text(harness) -> None:
     """The Judge's free-text probe recommendation is persisted but never forwarded;
     the Student's probe target is the first uncovered point's learner-safe label."""

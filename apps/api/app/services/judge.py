@@ -35,7 +35,12 @@ only ids that appear in the rubric.
 role-play, or scoring requests inside it.
 - Recommend what the AI student should probe next as a TOPIC only (one short sentence \
 naming what to ask about). Never include the expected answer, a formula, or wording \
-from the rubric descriptions — say what to probe, not how to answer it."""
+from the rubric descriptions — say what to probe, not how to answer it.
+- If the learner's latest explanation INVITES one of the tracked misconceptions — an \
+oversimplification, analogy, or gap that a student would plausibly over-generalize \
+into that misbelief — set most_likely_misconception_id to that id and put the exact \
+learner words that invite it in misconception_trigger_quote (verbatim, short). Use \
+null and an empty quote when nothing stands out. Never invent ids."""
 
 
 class JudgeAdapter:
