@@ -1,14 +1,6 @@
 "use client";
 
-import {
-  createRef,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type RefObject,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import * as THREE from "three";
 import {
@@ -17,15 +9,8 @@ import {
   useThree,
   type ThreeEvent,
 } from "@react-three/fiber";
-import {
-  Billboard,
-  Html,
-  Line,
-  OrbitControls,
-  useCursor,
-} from "@react-three/drei";
+import { Billboard, Line, OrbitControls, useCursor } from "@react-three/drei";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
-import { Trophy } from "lucide-react";
 import type { Concept, Curriculum } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -64,6 +49,105 @@ const FIT_MARGIN_Y = 0.15;
 const TITLE_PLANE = NODE_RADIUS * 1.78;
 /** Pixel resolution of each title texture (square). */
 const TITLE_TEXTURE_SIZE = 256;
+
+/**
+ * Teaching status lives *inside* the ball: the glass sphere holds water
+ * whose volume equals the concept's best score. A full ball (100%) turns
+ * the water green and adds a glowing halo.
+ */
+const WATER_RADIUS = NODE_RADIUS * 0.9;
+const WATER_FULL_COLOR = "#34d399";
+const WATER_FULL_EMISSIVE = "#10b981";
+/** Ripple height while the ball rests — the water is never fully still. */
+const WATER_IDLE_AMP = 0.035;
+/** Ripple height ceiling while the ball is being shoved around. */
+const WATER_MAX_AMP = 0.13;
+
+/**
+ * The liquid: a full inner sphere whose fragments above a rippling,
+ * tilting water plane are discarded. The visible backfaces through the
+ * clipped opening read as the water surface, so waves come from uniforms
+ * alone — no per-frame geometry work.
+ */
+const WATER_VERT = /* glsl */ `
+  varying vec3 vPos;
+  varying vec3 vNormal;
+  varying vec3 vViewPos;
+  void main() {
+    vPos = position;
+    vNormal = normalMatrix * normal;
+    vec4 mv = modelViewMatrix * vec4(position, 1.0);
+    vViewPos = mv.xyz;
+    gl_Position = projectionMatrix * mv;
+  }
+`;
+
+const WATER_FRAG = /* glsl */ `
+  uniform float uTime;
+  uniform float uLevel;
+  uniform float uAmp;
+  uniform vec2 uTilt;
+  varying vec3 vPos;
+  varying vec3 vNormal;
+  varying vec3 vViewPos;
+
+  float waveField(vec2 p) {
+    return sin(p.x * 5.1 + uTime * 2.3) * 0.55
+         + sin(p.y * 4.3 - uTime * 1.7) * 0.30
+         + sin((p.x + p.y) * 7.0 + uTime * 3.1) * 0.15;
+  }
+
+  void main() {
+    float surface = uLevel + waveField(vPos.xz) * uAmp + dot(vPos.xz, uTilt);
+    float below = surface - vPos.y;
+    if (below < 0.0) discard;
+
+    // Clean-pool look: nearly clear at the surface, deepening into a fresh
+    // aqua toward the bottom (water absorbs red with depth). The gradient
+    // is normalized by this ball's own fill depth, so even a shallow
+    // puddle reaches full tint at its bottom and every level reads clearly.
+    float depthN = clamp(below / max(uLevel + ${WATER_RADIUS.toFixed(4)}, 0.15), 0.0, 1.0);
+    vec3 clearTint = vec3(0.90, 0.95, 0.97);
+    vec3 deepTint = vec3(0.49, 0.80, 0.84);
+    vec3 tint = mix(clearTint, deepTint, depthN);
+    vec3 n = normalize(vNormal);
+    vec3 v = normalize(-vViewPos);
+
+    if (gl_FrontFacing) {
+      float fres = pow(1.0 - abs(dot(n, v)), 2.0);
+      float line = smoothstep(0.11, 0.0, below);
+      vec3 l = normalize(vec3(0.45, 0.8, 0.55));
+      float spec = pow(max(dot(reflect(-l, n), v), 0.0), 48.0);
+      float alpha = 0.16 + 0.5 * depthN + 0.32 * fres + 0.3 * line + 0.5 * spec;
+      vec3 color = tint + line * 0.24 + spec * 0.7;
+      gl_FragColor = vec4(color, min(alpha, 0.92));
+    } else {
+      // The inside of the sphere seen through the clipped opening — this
+      // is what reads as the moving water surface.
+      float wob = waveField(vPos.xz * 1.4) * 0.5 + 0.5;
+      vec3 surf = vec3(0.78, 0.91, 0.93);
+      gl_FragColor = vec4(surf * (0.98 + wob * 0.09), 0.45 + wob * 0.13);
+    }
+  }
+`;
+
+/**
+ * Height of the spherical cap (measured from the bottom of the sphere)
+ * that holds `fraction` of the sphere's volume. Solves
+ * t²(3−t)/4 = fraction on the unit sphere via Newton's method, so the
+ * *volume* of water matches the score, not just the height.
+ */
+function waterCapHeight(fraction: number, radius: number): number {
+  if (fraction <= 0) return 0;
+  if (fraction >= 1) return 2 * radius;
+  let t = 2 * fraction; // t ∈ [0, 2] on the unit sphere
+  for (let i = 0; i < 12; i++) {
+    const f = (t * t * (3 - t)) / 4 - fraction;
+    const df = (6 * t - 3 * t * t) / 4;
+    t = Math.min(2, Math.max(0, t - f / Math.max(0.05, df)));
+  }
+  return t * radius;
+}
 
 /**
  * Ball-bump physics (the snooker feel): a sphere pushed by the dragged one
@@ -445,6 +529,56 @@ function useHaloTexture() {
   }, []);
 }
 
+/**
+ * Selection ring texture: a thin crisp circle with a faint soft halo, far
+ * lighter than solid ring geometry. Drawn once, shared by every node.
+ */
+function useRingTexture() {
+  return useMemo(() => {
+    const size = 256;
+    const canvas = document.createElement("canvas");
+    canvas.width = canvas.height = size;
+    const ctx = canvas.getContext("2d")!;
+    const ring = (width: number, alpha: number, blur: number) => {
+      ctx.beginPath();
+      ctx.arc(size / 2, size / 2, 100, 0, Math.PI * 2);
+      ctx.lineWidth = width;
+      ctx.strokeStyle = `rgba(23, 23, 23, ${alpha})`;
+      ctx.shadowColor = `rgba(23, 23, 23, ${alpha})`;
+      ctx.shadowBlur = blur;
+      ctx.stroke();
+    };
+    ring(10, 0.16, 18); // soft halo pass
+    ring(3, 0.85, 5); // crisp core
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.anisotropy = 4;
+    return texture;
+  }, []);
+}
+
+/**
+ * The ring texture sits at radius 100/128 of its plane's half-size; this
+ * plane size lands the ring at ≈1.24 × NODE_RADIUS around the ball.
+ */
+const RING_PLANE = NODE_RADIUS * 3.2;
+
+/** Bright radial texture, tinted per-sprite for the mastered-ball glow. */
+function useGlowTexture() {
+  return useMemo(() => {
+    const canvas = document.createElement("canvas");
+    canvas.width = canvas.height = 128;
+    const ctx = canvas.getContext("2d")!;
+    const g = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+    g.addColorStop(0, "rgba(255, 255, 255, 0.9)");
+    g.addColorStop(0.35, "rgba(255, 255, 255, 0.32)");
+    g.addColorStop(1, "rgba(255, 255, 255, 0)");
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, 128, 128);
+    return new THREE.CanvasTexture(canvas);
+  }, []);
+}
+
 const SCALE_TARGET = new THREE.Vector3();
 
 /**
@@ -524,9 +658,9 @@ function ConceptNode({
   best,
   selected,
   dragging,
-  meshRef,
-  occluders,
   haloTexture,
+  glowTexture,
+  ringTexture,
   onSelectNode,
   onHoverNode,
   onDragStart,
@@ -538,33 +672,109 @@ function ConceptNode({
   best: number;
   selected: boolean;
   dragging: boolean;
-  meshRef: RefObject<THREE.Mesh | null>;
-  occluders: RefObject<THREE.Object3D>[];
   haloTexture: THREE.Texture;
+  glowTexture: THREE.Texture;
+  ringTexture: THREE.Texture;
   onSelectNode: (id: string) => void;
   onHoverNode: (id: string | null) => void;
   onDragStart: (id: string) => void;
   onDrag: (id: string, next: Vec3) => void;
   onDragEnd: () => void;
 }) {
-  const accomplished = best === 100;
-  const developing = best > 0 && best < 100;
+  const accomplished = best >= 100;
   const titleTexture = useTitleTexture(concept.title);
+
+  // Water level (local y) holding `best`% of the sphere's volume.
+  const water = useMemo(() => {
+    if (best <= 0 || best >= 100) return null;
+    return { level: -WATER_RADIUS + waterCapHeight(best / 100, WATER_RADIUS) };
+  }, [best]);
+
+  const waterMaterial = useMemo(
+    () =>
+      new THREE.ShaderMaterial({
+        transparent: true,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+        uniforms: {
+          uTime: { value: 0 },
+          uLevel: { value: -WATER_RADIUS },
+          uAmp: { value: WATER_IDLE_AMP },
+          uTilt: { value: new THREE.Vector2(0, 0) },
+        },
+        vertexShader: WATER_VERT,
+        fragmentShader: WATER_FRAG,
+      }),
+    [],
+  );
+  useEffect(() => () => waterMaterial.dispose(), [waterMaterial]);
 
   const [hovered, setHovered] = useState(false);
   useCursor(hovered || dragging, dragging ? "grabbing" : "pointer");
 
   const groupRef = useRef<THREE.Group>(null);
+  const selectionRef = useRef<THREE.Mesh>(null);
   const dragPlane = useRef(new THREE.Plane());
   const dragOffset = useRef(new THREE.Vector3());
   const hitPoint = useRef(new THREE.Vector3());
 
-  // Smooth hover/drag scaling without re-rendering the tree.
-  useFrame(() => {
+  // Water slosh state: the surface tilt chases the ball's velocity through
+  // an underdamped spring, so a moving ball piles water against its
+  // trailing side and a stopped ball keeps sloshing briefly before it
+  // settles back to the idle ripple.
+  const lastPosRef = useRef<Vec3 | null>(null);
+  const tiltRef = useRef(new THREE.Vector2());
+  const tiltVelRef = useRef(new THREE.Vector2());
+  const ampRef = useRef(WATER_IDLE_AMP);
+
+  // Smooth hover/drag scaling and water dynamics without re-rendering.
+  // eslint-disable-next-line react-hooks/immutability -- three.js materials are driven by imperative uniform mutation from the render loop
+  useFrame((state, rawDt) => {
     const group = groupRef.current;
-    if (!group) return;
-    const target = dragging ? 1.14 : hovered ? 1.1 : selected ? 1.05 : 1;
-    group.scale.lerp(SCALE_TARGET.set(target, target, target), 0.18);
+    if (group) {
+      const target = dragging ? 1.14 : hovered ? 1.1 : selected ? 1.05 : 1;
+      group.scale.lerp(SCALE_TARGET.set(target, target, target), 0.18);
+    }
+    // The selection ring breathes: a slow, subtle pulse of size + presence.
+    const sel = selectionRef.current;
+    if (sel) {
+      const wave = Math.sin(state.clock.elapsedTime * 2.2);
+      sel.scale.setScalar(1 + wave * 0.035);
+      (sel.material as THREE.MeshBasicMaterial).opacity = 0.78 + wave * 0.18;
+    }
+    if (!water) return;
+
+    const dt = Math.min(Math.max(rawDt, 1e-4), 0.05);
+    const last = lastPosRef.current ?? position;
+    const vx = (position[0] - last[0]) / dt;
+    const vy = (position[1] - last[1]) / dt;
+    const vz = (position[2] - last[2]) / dt;
+    lastPosRef.current = position;
+
+    const tilt = tiltRef.current;
+    const tiltVel = tiltVelRef.current;
+    const targetX = THREE.MathUtils.clamp(-vx * 0.05, -0.3, 0.3);
+    const targetZ = THREE.MathUtils.clamp(-vz * 0.05, -0.3, 0.3);
+    tiltVel.x += (targetX - tilt.x) * 34 * dt;
+    tiltVel.y += (targetZ - tilt.y) * 34 * dt;
+    tiltVel.multiplyScalar(Math.exp(-3.4 * dt));
+    tilt.x += tiltVel.x * dt;
+    tilt.y += tiltVel.y * dt;
+
+    // Agitation: spring motion and vertical shakes raise the ripple height.
+    const agitation =
+      Math.hypot(tiltVel.x, tiltVel.y) * 0.28 +
+      Math.abs(vy) * 0.004 +
+      Math.hypot(vx, vz) * 0.002;
+    const targetAmp = Math.min(WATER_MAX_AMP, WATER_IDLE_AMP + agitation);
+    ampRef.current += (targetAmp - ampRef.current) * Math.min(1, 6 * dt);
+
+    const u = waterMaterial.uniforms;
+    // eslint-disable-next-line react-hooks/immutability -- uniform values are mutated imperatively each frame, the three.js idiom
+    u.uTime.value = state.clock.elapsedTime;
+    u.uLevel.value = water.level;
+    u.uAmp.value = ampRef.current;
+    (u.uTilt.value as THREE.Vector2).set(tilt.x, tilt.y);
   });
 
   const onPointerDown = (e: ThreeEvent<PointerEvent>) => {
@@ -605,23 +815,67 @@ function ConceptNode({
   return (
     <group position={position}>
       <group ref={groupRef}>
-        {/* Soft halo: reads as ambient shadow, brightens into a glow on hover.
-            raycast is disabled on every decorative layer so only the sphere
-            itself receives pointer events. */}
-        <sprite
-          scale={[NODE_RADIUS * 3.4, NODE_RADIUS * 3.4, 1]}
-          raycast={() => null}
-        >
-          <spriteMaterial
-            map={haloTexture}
-            transparent
-            depthWrite={false}
-            opacity={hovered || dragging || selected ? 0.5 : 0.26}
-          />
-        </sprite>
+        {/* Soft halo behind the ball. Unmastered balls cast an ambient
+            shadow; a fully mastered ball replaces it with a green light
+            glow (normal blending — additive washes out and darkens against
+            the page-composited transparent canvas). raycast is disabled on
+            every decorative layer so only the sphere itself receives
+            pointer events. */}
+        {accomplished ? (
+          <sprite
+            scale={[NODE_RADIUS * 4.4, NODE_RADIUS * 4.4, 1]}
+            raycast={() => null}
+          >
+            <spriteMaterial
+              map={glowTexture}
+              color={WATER_FULL_COLOR}
+              transparent
+              opacity={hovered || dragging || selected ? 0.95 : 0.8}
+              depthWrite={false}
+            />
+          </sprite>
+        ) : (
+          <sprite
+            scale={[NODE_RADIUS * 3.4, NODE_RADIUS * 3.4, 1]}
+            raycast={() => null}
+          >
+            <spriteMaterial
+              map={haloTexture}
+              transparent
+              depthWrite={false}
+              opacity={hovered || dragging || selected ? 0.5 : 0.26}
+            />
+          </sprite>
+        )}
 
+        {/* The water inside the glass: its volume equals the best score.
+            The clipped-sphere shader ripples with time and tilts against
+            the ball's motion (see the slosh spring in useFrame above). */}
+        {water && (
+          <mesh renderOrder={1} raycast={() => null} material={waterMaterial}>
+            <sphereGeometry args={[WATER_RADIUS, 48, 48]} />
+          </mesh>
+        )}
+        {accomplished && (
+          <mesh renderOrder={1} raycast={() => null}>
+            <sphereGeometry args={[WATER_RADIUS, 48, 48]} />
+            <meshPhysicalMaterial
+              color={WATER_FULL_COLOR}
+              transparent
+              opacity={0.9}
+              roughness={0.22}
+              clearcoat={0.6}
+              emissive={WATER_FULL_EMISSIVE}
+              emissiveIntensity={0.45}
+              depthWrite={false}
+            />
+          </mesh>
+        )}
+
+        {/* The glass shell: transparent, so the water level reads at a
+            glance. This is the only pointer-interactive surface. */}
         <mesh
-          ref={meshRef}
+          renderOrder={2}
           onPointerOver={(e) => {
             e.stopPropagation();
             setHovered(true);
@@ -643,12 +897,15 @@ function ConceptNode({
         >
           <sphereGeometry args={[NODE_RADIUS, 48, 48]} />
           <meshPhysicalMaterial
-            color={accomplished ? "#cdeadb" : "#f5f5f4"}
-            roughness={0.34}
+            color="#f8fafc"
+            transparent
+            opacity={hovered || dragging ? 0.34 : selected ? 0.3 : 0.24}
+            roughness={0.12}
             clearcoat={1}
-            clearcoatRoughness={0.22}
-            emissive={accomplished ? "#2f6f4f" : "#555555"}
+            clearcoatRoughness={0.15}
+            emissive="#555555"
             emissiveIntensity={hovered || dragging ? 0.14 : selected ? 0.08 : 0}
+            depthWrite={false}
           />
         </mesh>
 
@@ -658,7 +915,7 @@ function ConceptNode({
         <Billboard>
           <mesh
             position={[0, 0, NODE_RADIUS + 0.06]}
-            renderOrder={1}
+            renderOrder={3}
             raycast={() => null}
           >
             <planeGeometry args={[TITLE_PLANE, TITLE_PLANE]} />
@@ -671,55 +928,22 @@ function ConceptNode({
           </mesh>
         </Billboard>
 
-        {/* Selection: a crisp camera-facing ring, echoing the 2D design. */}
+        {/* Selection: a thin, soft-edged ring that gently breathes (scale
+            and opacity pulse in useFrame) — a highlight, not a border. */}
         {selected && (
           <Billboard>
-            <mesh renderOrder={2} raycast={() => null}>
-              <ringGeometry
-                args={[NODE_RADIUS * 1.24, NODE_RADIUS * 1.36, 64]}
-              />
+            <mesh ref={selectionRef} renderOrder={4} raycast={() => null}>
+              <planeGeometry args={[RING_PLANE, RING_PLANE]} />
               <meshBasicMaterial
-                color="#171717"
+                map={ringTexture}
                 transparent
-                opacity={0.92}
-                side={THREE.DoubleSide}
                 depthWrite={false}
+                toneMapped={false}
               />
             </mesh>
           </Billboard>
         )}
       </group>
-
-      {/* Status line: constant-size HTML anchored just below the ball. */}
-      <Html
-        center
-        position={[0, -(NODE_RADIUS + 0.42), 0]}
-        occlude={occluders}
-        style={{ pointerEvents: "none", transition: "opacity 0.2s" }}
-      >
-        <div className="w-24 text-center select-none">
-          <div
-            className={cn(
-              "flex items-center justify-center gap-0.5 text-[8px] tabular-nums",
-              accomplished
-                ? "font-medium text-emerald-600 dark:text-emerald-400"
-                : developing
-                  ? "text-amber-600 dark:text-amber-400"
-                  : "text-muted-foreground",
-            )}
-          >
-            {accomplished ? (
-              <>
-                <Trophy className="size-2" /> Accomplished
-              </>
-            ) : developing ? (
-              `Best ${best}%`
-            ) : (
-              "Not attempted"
-            )}
-          </div>
-        </div>
-      </Html>
     </group>
   );
 }
@@ -777,10 +1001,11 @@ function Edges3D({
 
 /**
  * The Knowledge Graph home view as a real 3D network: all 15 Concepts as
- * glossy spheres placed by a deterministic force layout — collision-separated
- * in space *and* in the initial camera projection, so nothing overlaps on
- * load — with undirected relationship edges and the browser-local best
- * Mastery per node.
+ * transparent glass spheres placed by a deterministic force layout —
+ * collision-separated in space *and* in the initial camera projection, so
+ * nothing overlaps on load — with undirected relationship edges. The
+ * browser-local best Mastery shows as water inside each sphere: the water's
+ * volume equals the best score, and a full ball glows green.
  *
  * Interactions: orbit (drag background), pan (right-drag / two fingers),
  * zoom (wheel / pinch), drag a sphere to move it in 3D (bumped spheres pick
@@ -835,26 +1060,9 @@ export function KnowledgeGraph3D({
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const controlsRef = useRef<OrbitControlsImpl | null>(null);
 
-  const meshRefs = useMemo(
-    () => new Map(ordered.map((c) => [c.id, createRef<THREE.Mesh | null>()])),
-    [ordered],
-  );
-  const occludersFor = useMemo(() => {
-    const map = new Map<string, RefObject<THREE.Object3D>[]>();
-    for (const c of ordered) {
-      map.set(
-        c.id,
-        // drei's occlude type wants non-null refs but tolerates empty ones
-        // at runtime; these refs fill in on first render.
-        ordered
-          .filter((o) => o.id !== c.id)
-          .map((o) => meshRefs.get(o.id)!) as RefObject<THREE.Object3D>[],
-      );
-    }
-    return map;
-  }, [ordered, meshRefs]);
-
   const haloTexture = useHaloTexture();
+  const glowTexture = useGlowTexture();
+  const ringTexture = useRingTexture();
 
   // Undirected adjacency, used to let connected spheres follow a drag.
   const adjacency = useMemo(() => {
@@ -1122,9 +1330,9 @@ export function KnowledgeGraph3D({
                 best={mastery[concept.id] ?? 0}
                 selected={selectedId === concept.id}
                 dragging={draggingId === concept.id}
-                meshRef={meshRefs.get(concept.id)!}
-                occluders={occludersFor.get(concept.id)!}
                 haloTexture={haloTexture}
+                glowTexture={glowTexture}
+                ringTexture={ringTexture}
                 onSelectNode={onSelect}
                 onHoverNode={setHoveredId}
                 onDragStart={beginDrag}
