@@ -13,14 +13,8 @@ import { StartTeachingSphere } from "@/components/start-teaching-sphere";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { StudentVideoPickerAvatar } from "@/components/student-video-picker-avatar";
 import { CHARACTER_BY_MODE } from "@/lib/characters";
-import { ApiError, getGraphCurriculum, startSession } from "@/lib/api";
-import { finishAbandonedSessions } from "@/lib/finish-abandoned";
-import {
-  loadMastery,
-  markFreshSession,
-  saveStoredSession,
-  sessionFromCreated,
-} from "@/lib/session-store";
+import { ApiError, getGraphCurriculum } from "@/lib/api";
+import { loadMastery, stashPendingStart } from "@/lib/session-store";
 import type { Curriculum, Mode } from "@/lib/types";
 import { MODES, MODE_BY_STUDENT_ID } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -62,7 +56,6 @@ function GraphPageInner() {
   // No default student: nothing is highlighted until the learner picks one.
   const [mode, setMode] = useState<Mode | null>(null);
   const [pending, setPending] = useState(false);
-  const [startError, setStartError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -128,26 +121,17 @@ function GraphPageInner() {
 
   const selected = curriculum?.concepts.find((c) => c.id === conceptId) ?? null;
 
-  async function start() {
+  // Navigate immediately: the session page fires the actual start request and
+  // waits for the opening question in place, so the learner never sits here
+  // watching the sphere fill while the LLM thinks.
+  function start() {
     if (!selected || !mode || pending) return;
     setPending(true);
-    setStartError(null);
-    try {
-      const created = await startSession({
-        graph_id: graphId,
-        concept_id: selected.id,
-        mode,
-      });
-      finishAbandonedSessions(created.session_id);
-      saveStoredSession(sessionFromCreated(created));
-      markFreshSession(created.session_id);
-      router.push(`/session/${created.session_id}`);
-    } catch (err) {
-      setStartError(
-        err instanceof Error ? err.message : "Something went wrong.",
-      );
-      setPending(false);
-    }
+    stashPendingStart({
+      request: { graph_id: graphId, concept_id: selected.id, mode },
+      concept_title: selected.title,
+    });
+    router.push("/session/new");
   }
 
   const stepAnimation = cn(
@@ -267,13 +251,6 @@ function GraphPageInner() {
                   );
                 })}
               </div>
-
-              {startError && (
-                <Alert variant="destructive">
-                  <AlertTitle>Could not start the session</AlertTitle>
-                  <AlertDescription>{startError}</AlertDescription>
-                </Alert>
-              )}
 
               <StartTeachingSphere
                 className="pt-2"

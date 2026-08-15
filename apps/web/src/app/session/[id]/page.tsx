@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
@@ -35,22 +35,30 @@ import {
   getSession,
   getTurnSpeech,
   IS_MOCK,
+  startSession,
   submitTurn,
   transcribeAudio,
 } from "@/lib/api";
+import { finishAbandonedSessions } from "@/lib/finish-abandoned";
 import type { GainChip } from "@/lib/progress-gain";
 import { buildGainChips } from "@/lib/progress-gain";
 import {
   LEARNER_TRANSCRIPT_MS_PER_WORD,
   STUDENT_FALLBACK_MS_PER_WORD,
 } from "@/lib/reveal";
+import type { PendingStart } from "@/lib/session-store";
 import {
   applyFinished,
   applyTurn,
+  clearPendingStart,
   consumeFreshSession,
+  loadPendingStart,
   loadStoredSession,
+  markFreshSession,
+  placeholderFromPending,
   recordMastery,
   saveStoredSession,
+  sessionFromCreated,
   sessionFromSnapshot,
 } from "@/lib/session-store";
 import { useReducedMotion } from "@/lib/use-reduced-motion";
@@ -71,6 +79,56 @@ export default function SessionPage() {
 
   const [session, setSession] = useState<StoredSession | null>(null);
   const [missing, setMissing] = useState(false);
+
+  // "/session/new": the setup page navigated here immediately and stashed the
+  // start request; this page fires POST /api/sessions itself and renders the
+  // session view in a waiting state until the opening question arrives, then
+  // swaps the real id into the URL. A refresh mid-creation reloads the stash
+  // and simply fires the request again.
+  const isNew = id === "new";
+  const [pendingStart, setPendingStart] = useState<PendingStart | null>(null);
+  const [startError, setStartError] = useState<string | null>(null);
+  const startFired = useRef(false);
+
+  const createSession = useCallback(
+    async (pending: PendingStart) => {
+      setStartError(null);
+      try {
+        const created = await startSession(pending.request);
+        finishAbandonedSessions(created.session_id);
+        saveStoredSession(sessionFromCreated(created));
+        markFreshSession(created.session_id);
+        clearPendingStart();
+        // Deliberately no setSession here: swapping the id remounts the page,
+        // and the remounted instance must be the one that loads the session
+        // and runs the fresh-session reveal + speech of the opening question
+        // (a reveal begun in this instance would die with its unmount).
+        router.replace(`/session/${created.session_id}`, { scroll: false });
+      } catch (err) {
+        setStartError(
+          err instanceof Error ? err.message : "Something went wrong.",
+        );
+      }
+    },
+    [router],
+  );
+
+  useEffect(() => {
+    if (!isNew || startFired.current) return;
+    startFired.current = true;
+    // sessionStorage is client-only; defer the read past hydration.
+    void Promise.resolve().then(() => {
+      const pending = loadPendingStart();
+      if (!pending) {
+        // Nothing stashed (deep link straight to /session/new): nothing to
+        // create, so back to the graph picker.
+        router.replace("/");
+        return;
+      }
+      setPendingStart(pending);
+      void createSession(pending);
+    });
+  }, [isNew, router, createSession]);
 
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
@@ -164,7 +222,17 @@ export default function SessionPage() {
 
   const bottomRef = useRef<HTMLDivElement>(null);
 
+  // Stand-in session while creation is in flight, so the ordinary session
+  // view renders (header, avatar, composer) with the opening question pending.
+  const placeholder = useMemo(
+    () => (pendingStart ? placeholderFromPending(pendingStart) : null),
+    [pendingStart],
+  );
+
   useEffect(() => {
+    // "new" is the waiting state, not a stored session id; the creation
+    // effect above owns it (and hands over via router.replace when done).
+    if (id === "new") return;
     let cancelled = false;
     // localStorage is client-only; defer the read past hydration.
     void Promise.resolve().then(async () => {
@@ -350,6 +418,10 @@ export default function SessionPage() {
   }
 
   function sendText() {
+    // The learner can pre-type while the session is still being created, but
+    // nothing can be submitted (and the draft must not be cleared) until the
+    // session exists.
+    if (!session) return;
     const text = input.trim();
     if (!text) return;
     setInput("");
@@ -508,36 +580,44 @@ export default function SessionPage() {
     );
   }
 
-  if (!session) return null;
+  // While creation is in flight the placeholder stands in; the moment the
+  // real session lands the same view re-renders from it seamlessly.
+  const view = session ?? placeholder;
+  if (!view) return null;
+  const starting = session === null;
 
-  const mode = MODES[session.mode];
+  const mode = MODES[view.mode];
   // While gain chips are in flight the bar shows the frozen/staged value;
   // otherwise the stored percent (they re-converge on the last chip).
-  const percent = displayedPercent ?? session.progress.percent;
-  const ended = session.status === "ended";
+  const percent = displayedPercent ?? view.progress.percent;
+  const ended = view.status === "ended";
   const busy = sending || transcribing;
   // Only the newest reply ever animates, so "any student message revealing"
   // means the student is mid-speech (drives the avatar and the ended banner).
-  const studentRevealing = session.messages.some(
+  const studentRevealing = view.messages.some(
     (m) => m.role === "student" && m.id in revealTexts,
   );
 
   // Conversation lifecycle → avatar state (priority order matters).
-  const avatarState: StudentAvatarState = ended
-    ? session.end_reason === "mastery"
-      ? "happy"
-      : "idle"
-    : busy
-      ? "thinking"
-      : turnError
-        ? "confused"
-        : avatarSpeaking || studentRevealing
-          ? "speaking"
-          : recording || input.trim().length > 0
-            ? "listening"
-            : "idle";
+  const avatarState: StudentAvatarState = starting
+    ? startError
+      ? "confused"
+      : "thinking"
+    : ended
+      ? view.end_reason === "mastery"
+        ? "happy"
+        : "idle"
+      : busy
+        ? "thinking"
+        : turnError
+          ? "confused"
+          : avatarSpeaking || studentRevealing
+            ? "speaking"
+            : recording || input.trim().length > 0
+              ? "listening"
+              : "idle";
   const conversationStarted =
-    session.learner_turn_count > 0 || busy || pendingTurn !== null;
+    view.learner_turn_count > 0 || busy || pendingTurn !== null;
 
   return (
     <div className="flex h-dvh flex-col">
@@ -551,7 +631,7 @@ export default function SessionPage() {
             nativeButton={false}
             render={
               <Link
-                href={session.graph_id ? `/graphs/${session.graph_id}` : "/"}
+                href={view.graph_id ? `/graphs/${view.graph_id}` : "/"}
               />
             }
           >
@@ -559,11 +639,11 @@ export default function SessionPage() {
           </Button>
           <div className="min-w-0 flex-1">
             <h1 className="truncate font-semibold leading-tight">
-              {session.concept.title}
+              {view.concept.title}
             </h1>
             <p className="text-xs text-muted-foreground">
               Teaching {mode.name} · {mode.label} · Turn{" "}
-              {session.learner_turn_count}/8
+              {view.learner_turn_count}/8
             </p>
           </div>
           <div className="hidden w-48 shrink-0 items-center gap-2 sm:flex">
@@ -603,7 +683,7 @@ export default function SessionPage() {
             variant="outline"
             size="sm"
             className="shrink-0"
-            disabled={finishing}
+            disabled={finishing || starting}
             onClick={finishAndReport}
           >
             {finishing ? (
@@ -647,7 +727,7 @@ export default function SessionPage() {
                 on screen, idle otherwise. On mastery it greets once as a
                 little celebration. */}
             <CharacterVideoAvatar
-              characterId={CHARACTER_BY_MODE[session.mode]}
+              characterId={CHARACTER_BY_MODE[view.mode]}
               isListening={
                 avatarState === "listening" || avatarState === "thinking"
               }
@@ -672,12 +752,33 @@ export default function SessionPage() {
               conversationStarted && "flex-1",
             )}
           >
-            {session.messages.map((m) => (
+            {starting && !startError && (
+              <div className="flex items-center justify-center gap-2 py-2 text-sm text-muted-foreground">
+                <Loader2 className="size-3.5 animate-spin" />
+                {mode.name} is thinking of an opening question…
+              </div>
+            )}
+            {starting && startError && pendingStart && (
+              <Alert variant="destructive">
+                <AlertTitle>Could not start the session</AlertTitle>
+                <AlertDescription className="flex flex-wrap items-center gap-2">
+                  <span>{startError}</span>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => void createSession(pendingStart)}
+                  >
+                    <RotateCcw className="size-3.5" /> Retry
+                  </Button>
+                </AlertDescription>
+              </Alert>
+            )}
+            {view.messages.map((m) => (
               <MessageBubble
                 key={m.id}
                 message={m}
-                session={session}
-                onSpeak={(turnNumber) => speak(session.session_id, turnNumber)}
+                session={view}
+                onSpeak={(turnNumber) => speak(view.session_id, turnNumber)}
                 revealText={revealTexts[m.id] ?? null}
                 onSkipReveal={() => skipReveal(m.id)}
               />
@@ -689,8 +790,8 @@ export default function SessionPage() {
                   role: "learner",
                   text: pendingTurn.text,
                 }}
-                session={session}
-                onSpeak={(turnNumber) => speak(session.session_id, turnNumber)}
+                session={view}
+                onSpeak={(turnNumber) => speak(view.session_id, turnNumber)}
                 revealText={revealTexts[pendingTurn.client_turn_id] ?? null}
                 onSkipReveal={() => skipReveal(pendingTurn.client_turn_id)}
               />
@@ -720,9 +821,9 @@ export default function SessionPage() {
             {ended && !studentRevealing && (
               <div className="rounded-lg border border-emerald-500/40 bg-emerald-50 p-4 text-sm dark:bg-emerald-500/10">
                 <p className="font-medium">
-                  {session.end_reason === "mastery"
+                  {view.end_reason === "mastery"
                     ? `🎉 ${mode.name} reached 100% — mastery!`
-                    : session.end_reason === "turn_limit"
+                    : view.end_reason === "turn_limit"
                       ? "The eight-turn limit was reached."
                       : "You finished the session."}
                 </p>
@@ -773,7 +874,7 @@ export default function SessionPage() {
               placeholder={
                 ended
                   ? "This session has ended."
-                  : `Explain ${session.concept.title} to ${mode.name}…`
+                  : `Explain ${view.concept.title} to ${mode.name}…`
               }
               value={input}
               maxLength={MAX_LEARNER_TEXT_LENGTH}
@@ -796,7 +897,7 @@ export default function SessionPage() {
             <p className="mt-1 text-right text-[11px] text-muted-foreground">
               {recording
                 ? "Recording… click the mic to stop and send · Esc to cancel"
-                : `${session.turns_remaining} turns left · Enter to send, or click the mic to talk`}
+                : `${view.turns_remaining} turns left · Enter to send, or click the mic to talk`}
             </p>
 
             {/* The three action spheres under the text window: Speak, the
@@ -831,7 +932,7 @@ export default function SessionPage() {
                   active={recording}
                   danger={recording}
                   float={{ duration: "5.7s", delay: "-2.3s" }}
-                  disabled={busy || ended}
+                  disabled={busy || ended || starting}
                   aria-label={
                     recording ? "Stop recording and send" : "Start voice input"
                   }
@@ -845,8 +946,8 @@ export default function SessionPage() {
                 />
               </div>
               <SessionInsightSphere
-                points={session.covered_points}
-                misconception={session.active_misconception}
+                points={view.covered_points}
+                misconception={view.active_misconception}
                 studentName={mode.name}
               />
               <ComposerSphere
@@ -858,7 +959,7 @@ export default function SessionPage() {
                   )
                 }
                 float={{ duration: "4.6s", delay: "-3.4s" }}
-                disabled={busy || ended || input.trim().length === 0}
+                disabled={busy || ended || starting || input.trim().length === 0}
                 aria-label="Send explanation"
                 title="Send your explanation"
                 onClick={sendText}

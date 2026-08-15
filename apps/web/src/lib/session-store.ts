@@ -9,6 +9,7 @@ import type {
   SessionCreated,
   SessionFinished,
   SessionSnapshot,
+  StartSessionRequest,
   StoredSession,
   TurnEnvelope,
 } from "./types";
@@ -201,6 +202,72 @@ export function applyFinished(
       finished.graph_update?.created === true
         ? finished.graph_update.graph_id
         : session.graph_id,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Pending start: clicking "start teaching" stashes the start request here and
+// navigates to /session/new immediately, so the learner waits for the opening
+// question inside the session view instead of on the setup page. Kept in
+// sessionStorage on purpose — a refresh mid-creation just fires the request
+// again (finishSession's abandoned-session sweep tolerates the rare orphan).
+
+/** A start request handed from a setup page to the session page. */
+export interface PendingStart {
+  request: StartSessionRequest;
+  /** Shown in the session header until the server names the concept. */
+  concept_title: string;
+}
+
+const PENDING_START_KEY = "pfad:pending-start";
+
+export function stashPendingStart(pending: PendingStart) {
+  window.sessionStorage.setItem(PENDING_START_KEY, JSON.stringify(pending));
+}
+
+export function loadPendingStart(): PendingStart | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.sessionStorage.getItem(PENDING_START_KEY);
+    return raw ? (JSON.parse(raw) as PendingStart) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function clearPendingStart() {
+  try {
+    window.sessionStorage.removeItem(PENDING_START_KEY);
+  } catch {
+    // Storage unavailable: nothing was stashed either.
+  }
+}
+
+/**
+ * A renderable stand-in for the session view while the opening question is
+ * still being generated. Never persisted; replaced wholesale by the real
+ * StoredSession the moment SessionCreated arrives.
+ */
+export function placeholderFromPending(pending: PendingStart): StoredSession {
+  return {
+    session_id: "",
+    graph_id: pending.request.graph_id ?? null,
+    concept: {
+      id: pending.request.concept_id ?? "",
+      title: pending.concept_title,
+    },
+    mode: pending.request.mode,
+    messages: [],
+    progress: { percent: 0 },
+    learner_turn_count: 0,
+    turns_remaining: 8,
+    status: "active",
+    end_reason: null,
+    active_misconception: null,
+    covered_points: [],
+    report: null,
+    graph_update: null,
+    created_at: new Date().toISOString(),
   };
 }
 

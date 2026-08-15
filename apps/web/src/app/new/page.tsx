@@ -2,19 +2,12 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Input } from "@/components/ui/input";
 import { StartTeachingSphere } from "@/components/start-teaching-sphere";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { StudentVideoPickerAvatar } from "@/components/student-video-picker-avatar";
 import { CHARACTER_BY_MODE } from "@/lib/characters";
-import { startSession } from "@/lib/api";
-import { finishAbandonedSessions } from "@/lib/finish-abandoned";
-import {
-  markFreshSession,
-  saveStoredSession,
-  sessionFromCreated,
-} from "@/lib/session-store";
+import { stashPendingStart } from "@/lib/session-store";
 import type { Mode } from "@/lib/types";
 import { MAX_TOPIC_LENGTH, MODES, MODE_BY_STUDENT_ID } from "@/lib/types";
 
@@ -30,7 +23,6 @@ export default function NewGraphPage() {
   const [topic, setTopic] = useState("");
   const [mode, setMode] = useState<Mode | null>(null);
   const [pending, setPending] = useState(false);
-  const [startError, setStartError] = useState<string | null>(null);
 
   // The browser can restore this page with stale in-flight state (bfcache)
   // when the learner navigates back from a session.
@@ -43,20 +35,17 @@ export default function NewGraphPage() {
   const trimmed = topic.trim();
   const ready = trimmed.length > 0 && trimmed.length <= MAX_TOPIC_LENGTH;
 
-  async function start() {
+  // Navigate immediately: the session page fires the actual start request and
+  // waits for the opening question in place, so the learner never sits here
+  // watching the sphere fill while the rubric and question are generated.
+  function start() {
     if (!ready || !mode || pending) return;
     setPending(true);
-    setStartError(null);
-    try {
-      const created = await startSession({ topic: trimmed, mode });
-      finishAbandonedSessions(created.session_id);
-      saveStoredSession(sessionFromCreated(created));
-      markFreshSession(created.session_id);
-      router.push(`/session/${created.session_id}`);
-    } catch (err) {
-      setStartError(err instanceof Error ? err.message : "Something went wrong.");
-      setPending(false);
-    }
+    stashPendingStart({
+      request: { topic: trimmed, mode },
+      concept_title: trimmed,
+    });
+    router.push("/session/new");
   }
 
   return (
@@ -109,13 +98,6 @@ export default function NewGraphPage() {
               );
             })}
           </div>
-
-          {startError && (
-            <Alert variant="destructive">
-              <AlertTitle>Could not start the session</AlertTitle>
-              <AlertDescription>{startError}</AlertDescription>
-            </Alert>
-          )}
 
           <StartTeachingSphere
             className="pt-2"
