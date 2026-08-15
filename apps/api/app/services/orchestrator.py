@@ -346,13 +346,17 @@ class SessionOrchestrator:
 
     # -- speech lookup ------------------------------------------------------
 
-    async def student_text_for_turn(self, session_id: str, turn_number: int) -> str:
+    async def student_speech_for_turn(self, session_id: str, turn_number: int) -> tuple[str, str]:
+        """The stored AI Student text for one turn, plus the session's mode.
+
+        The mode selects the server-configured voice character (AC-CFG-5).
+        """
         document = await self._get_or_404(session_id)
         if turn_number == 0:
-            return document["opening_text"]
+            return document["opening_text"], document["mode"]
         for turn in document["turns"]:
             if turn["turn_number"] == turn_number:
-                return turn["student_text"]
+                return turn["student_text"], document["mode"]
         raise ApiError(404, ErrorCode.TURN_NOT_FOUND, "The session has no such turn.")
 
     # -- helpers ------------------------------------------------------------

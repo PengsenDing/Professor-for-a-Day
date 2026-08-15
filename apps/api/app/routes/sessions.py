@@ -89,9 +89,9 @@ async def get_turn_speech(
     speech: Annotated[SpeechService, Depends(get_speech_service)],
 ) -> Response:
     """Synthesize speech for one AI Student reply (ADR-0003: on fetch, never cached)."""
-    student_text = await orchestrator.student_text_for_turn(session_id, turn_number)
+    student_text, mode = await orchestrator.student_speech_for_turn(session_id, turn_number)
     try:
-        audio = await speech.synthesize(student_text)
+        audio = await speech.synthesize(student_text, mode=mode)
     except SpeechSynthesisError as error:
         raise ApiError(
             502, ErrorCode.SPEECH_FAILED, "Speech synthesis is temporarily unavailable."

@@ -280,9 +280,11 @@ paths:
       operationId: getTurnSpeech
       summary: Synthesize speech for one AI Student reply
       description: |
-        Synthesizes the stored `student_text` of the given turn with the single
-        server-configured default voice and returns the audio. `turn_number: 0`
-        is the session's opening question.
+        Synthesizes the stored `student_text` of the given turn and returns the
+        audio. The voice is resolved server-side from the session's AI Student
+        mode — each mode speaks with its own configured character — and no
+        request parameter can select a voice. `turn_number: 0` is the session's
+        opening question.
 
         Synthesis happens on every fetch — nothing is cached or persisted
         server-side. Clients should cache the returned blob for replay. A muted

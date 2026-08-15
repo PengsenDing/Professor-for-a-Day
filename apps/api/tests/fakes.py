@@ -214,14 +214,16 @@ class FakeSpeechService:
         self.fail_transcribe = False
         self.fail_synthesize = False
         self.synthesized_texts: list[str] = []
+        self.synthesized_modes: list[str | None] = []
 
     async def transcribe(self, audio: bytes) -> str:
         if self.fail_transcribe:
             raise TranscriptionError("scripted transcription failure")
         return self.TRANSCRIPT
 
-    async def synthesize(self, text: str) -> bytes:
+    async def synthesize(self, text: str, mode: str | None = None) -> bytes:
         if self.fail_synthesize:
             raise SpeechSynthesisError("scripted synthesis failure")
         self.synthesized_texts.append(text)
+        self.synthesized_modes.append(mode)
         return self.AUDIO

@@ -80,7 +80,8 @@ this document applies to them.
 
 Speech is **synthesized on fetch** (ADR-0003). JSON responses carry no audio and no
 `speech` object. The client fetches `GET .../turns/{turn_number}/speech`, which
-synthesizes the stored `student_text` with the fixed default voice and returns
+synthesizes the stored `student_text` with the server-configured voice for the
+session's AI Student mode and returns
 `audio/mpeg`. Nothing is cached or persisted server-side; clients cache blobs for replay.
 Voice input is two-step and non-editable: transcribe via `/api/speech/transcriptions`,
 then submit the transcript through the ordinary turn contract with `input_mode: "voice"`.
@@ -115,7 +116,8 @@ Superseded by the frozen contract (read them through the OpenAPI document):
 ### A. Configuration and startup — `AC-CFG`
 
 - **AC-CFG-1** — The server reads `DEUTSCHLANDGPT_API_KEY`, `DEUTSCHLANDGPT_MODEL`,
-  `DEUTSCHLANDGPT_BASE_URL`, `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`,
+  `DEUTSCHLANDGPT_BASE_URL`, `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`, the per-mode
+  `ELEVENLABS_VOICE_ID_BEGINNER` / `ELEVENLABS_VOICE_ID_CONFIDENT` / `ELEVENLABS_VOICE_ID_SKEPTIC`,
   `ELEVENLABS_STT_MODEL`, `ELEVENLABS_TTS_MODEL`, and the existing MongoDB settings from the
   environment only. No key, token, or voice credential appears in source or in
   `.env.example` beyond its variable name.
@@ -127,8 +129,8 @@ Superseded by the frozen contract (read them through the OpenAPI document):
 - **AC-CFG-4** — Startup with an unreachable MongoDB still succeeds. `/health` reports
   `database: "down"`, `/api/curriculum` still answers `200`, and every `/api/sessions*` route
   answers `503` with `{"detail": "The database is not available."}`.
-- **AC-CFG-5** — One fixed default ElevenLabs voice is configured server-side. No request
-  parameter can select a different voice.
+- **AC-CFG-5** — ElevenLabs voices are fixed server-side: one voice per AI Student mode,
+  with `ELEVENLABS_VOICE_ID` as the fallback. No request parameter can select a voice.
 - **AC-CFG-6** — `SESSION_MAX_LEARNER_TURNS` defaults to `8` and is read from configuration
   rather than hard-coded at a call site, so the limit is testable without patching internals.
 
@@ -358,8 +360,8 @@ Superseded by the frozen contract (read them through the OpenAPI document):
 - **AC-TTS-2** — `speech` has the shape `{"available": bool, "audio_base64": str | null,
   "mime_type": str | null}`. When `available` is `true`, `audio_base64` is non-empty and
   decodes to non-zero bytes.
-- **AC-TTS-3** — All syntheses use the one configured default voice. No request field can
-  change it, and a test asserts the configured voice id reached the adapter.
+- **AC-TTS-3** — All syntheses use the server-configured voice for the session's AI Student
+  mode. No request field can change it, and a test asserts the mode-resolved voice selection.
 - **AC-TTS-4** — A synthesis failure is non-fatal: the response is still `200`/`201` with the
   full `student_text` and `speech.available = false`. The session stays active and the next
   turn is accepted. Muting is a client concern and does not disable the server-side call.
