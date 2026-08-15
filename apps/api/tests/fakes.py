@@ -3,6 +3,7 @@
 import copy
 from typing import Any
 
+from app.services.critic import CriticVerdict
 from app.services.evaluation import (
     DemonstratedPoint,
     IntroducedMisconception,
@@ -13,6 +14,7 @@ from app.services.exceptions import (
     SpeechSynthesisError,
     TranscriptionError,
 )
+from app.services.student import StudentReply
 
 EMPTY_EVALUATION = JudgeEvaluation(
     newly_demonstrated_points=[],
@@ -27,6 +29,8 @@ def make_evaluation(
     points: list[str] | None = None,
     corrected: list[str] | None = None,
     introduced: list[str] | None = None,
+    suggested: str | None = None,
+    trigger: str = "",
 ) -> JudgeEvaluation:
     return JudgeEvaluation(
         newly_demonstrated_points=[
@@ -39,6 +43,8 @@ def make_evaluation(
             IntroducedMisconception(summary=summary) for summary in introduced or []
         ],
         recommended_next_probe="Probe the next idea.",
+        most_likely_misconception_id=suggested,
+        misconception_trigger_quote=trigger,
     )
 
 
@@ -155,6 +161,9 @@ class FakeStudent:
         self.reply_calls: list[dict[str, Any]] = []
         self.fail_opening = False
         self.fail_reply = False
+        # Attach to simulate a critic-reviewed (and possibly regenerated) reply.
+        self.critic_verdict: CriticVerdict | None = None
+        self.regenerated = False
 
     async def opening_question(self, *, rubric, concept_title, mode) -> str:
         self.call_log.append("student_opening")
@@ -177,13 +186,15 @@ class FakeStudent:
         pose,
         press,
         session_ended,
-    ) -> str:
+        pose_trigger=None,
+    ) -> StudentReply:
         self.call_log.append("student_reply")
         self.reply_calls.append(
             {
                 "mode": mode,
                 "probe_focus": probe_focus,
                 "pose": pose,
+                "pose_trigger": pose_trigger,
                 "press": press,
                 "session_ended": session_ended,
                 "transcript": list(transcript),
@@ -192,12 +203,16 @@ class FakeStudent:
         if self.fail_reply:
             raise GenerationError("scripted reply failure")
         if session_ended:
-            return "Thanks for teaching me!"
-        if pose is not None:
-            return f"But I thought: {pose.summary}"
-        if press is not None:
-            return f"I still think: {press.summary}"
-        return "Interesting — can you tell me more?"
+            text = "Thanks for teaching me!"
+        elif pose is not None:
+            text = f"But I thought: {pose.summary}"
+        elif press is not None:
+            text = f"I still think: {press.summary}"
+        else:
+            text = "Interesting — can you tell me more?"
+        return StudentReply(
+            text=text, regenerated=self.regenerated, critic=self.critic_verdict
+        )
 
 
 class FakeSpeechService:

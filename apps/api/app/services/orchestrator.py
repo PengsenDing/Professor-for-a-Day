@@ -35,7 +35,7 @@ from .exceptions import GenerationError
 from .judge import JudgeAdapter
 from .report import build_report
 from .scoring import ScoringState, apply_evaluation, pose_misconception
-from .student import StudentAdapter
+from .student import StudentAdapter, StudentReply
 
 logger = logging.getLogger(__name__)
 
@@ -145,11 +145,28 @@ class SessionOrchestrator:
             percent = max(result.percent, document["progress_percent"])  # monotonic
             ended, end_reason = self._exit_state(percent, turn_number)
 
+            # The mirror mechanism (A): the Judge may flag which tracked
+            # misconception the learner's own explanation invites. It is advice
+            # only — validated against the rubric here, and the orchestrator
+            # still decides whether anything is posed at all.
+            suggested_id = evaluation.most_likely_misconception_id
+            if suggested_id is not None and suggested_id not in rubric.misconception_ids():
+                logger.warning(
+                    "discarded hallucinated rubric id session_id=%s id=%s",
+                    session_id,
+                    suggested_id,
+                )
+                suggested_id = None
+
             # An ended session poses nothing new; an active one poses the next
             # challenge, or keeps pressing the outstanding one so the Student
             # cannot drift into conceding on its own (only the Judge resolves it).
             pose = (
-                None if ended else self._pick_misconception_to_pose(rubric, result.state, percent)
+                None
+                if ended
+                else self._pick_misconception_to_pose(
+                    rubric, result.state, percent, suggested_id
+                )
             )
             state_after = (
                 pose_misconception(result.state, pose.id) if pose is not None else result.state
@@ -157,6 +174,15 @@ class SessionOrchestrator:
             press: RubricMisconception | None = None
             if not ended and pose is None:
                 press = _rubric_misconception(rubric, state_after.active_misconception_id())
+
+            # The mirror mechanism (B): anchor the posed misconception to the
+            # learner's own words — but only when the quote is verbatim from the
+            # submission, so the Student can never misquote the teacher.
+            pose_trigger: str | None = None
+            if pose is not None and pose.id == suggested_id:
+                quote = evaluation.misconception_trigger_quote.strip()
+                if quote and quote in request.learner_text:
+                    pose_trigger = quote
 
             # The probe target is selected here, in code, as a learner-safe point
             # label. The Judge's free-text recommendation is persisted with the
@@ -171,10 +197,10 @@ class SessionOrchestrator:
             if ended and end_reason is EndReason.mastery:
                 # The moment of victory is scripted, not generated: the Judge just
                 # resolved the challenge, so the concession can never drift.
-                student_text = MASTERY_CLOSING_LINE
+                student_reply = StudentReply(text=MASTERY_CLOSING_LINE)
             else:
                 try:
-                    student_text = await self._student.reply(
+                    student_reply = await self._student.reply(
                         rubric=rubric,
                         concept_title=self._concept_title(document["concept_id"]),
                         mode=mode,
@@ -182,6 +208,7 @@ class SessionOrchestrator:
                         learner_text=request.learner_text,
                         probe_focus=probe_focus,
                         pose=pose,
+                        pose_trigger=pose_trigger,
                         press=press,
                         session_ended=ended,
                     )
@@ -211,7 +238,18 @@ class SessionOrchestrator:
                 "client_turn_id": str(request.client_turn_id),
                 "learner_text": request.learner_text,
                 "input_mode": request.input_mode.value,
-                "student_text": student_text,
+                "student_text": student_reply.text,
+                # Internal quality trail (AC-STU-10): the critic's verdict for the
+                # reply that shipped, never surfaced in any API response.
+                "critic": (
+                    {
+                        "violations": student_reply.critic.violations(),
+                        "score": student_reply.critic.score,
+                        "regenerated": student_reply.regenerated,
+                    }
+                    if student_reply.critic is not None
+                    else None
+                ),
                 "evaluation": evaluation.model_dump(),
                 "progress_percent": percent,
                 "newly_covered_points": [point.model_dump() for point in newly_covered],
@@ -268,7 +306,7 @@ class SessionOrchestrator:
             return TurnEnvelope(
                 turn_number=turn_number,
                 learner_transcript=request.learner_text,
-                student_text=student_text,
+                student_text=student_reply.text,
                 progress=Progress(percent=percent),
                 newly_covered_points=newly_covered,
                 active_misconception=active,
@@ -343,9 +381,14 @@ class SessionOrchestrator:
         return concept.title if concept else concept_id
 
     def _pick_misconception_to_pose(
-        self, rubric: Rubric, state: ScoringState, percent: int
+        self,
+        rubric: Rubric,
+        state: ScoringState,
+        percent: int,
+        suggested_id: str | None = None,
     ) -> RubricMisconception | None:
-        """Pose the first unposed rubric misconception once none is outstanding.
+        """Pose the Judge-suggested misconception when the learner's explanation
+        invites one; otherwise the first unposed, once none is outstanding.
 
         At least one challenge must be posed for mastery to be reachable
         (AC-JDG-8); one resolved challenge is sufficient, so nothing new is posed
@@ -355,6 +398,10 @@ class SessionOrchestrator:
             return None
         if state.active_misconception_id() is not None:
             return None
+        if suggested_id is not None and suggested_id not in state.posed_misconception_ids:
+            suggested = _rubric_misconception(rubric, suggested_id)
+            if suggested is not None:
+                return suggested
         for misconception in rubric.misconceptions:
             if misconception.id not in state.posed_misconception_ids:
                 return misconception

@@ -15,6 +15,7 @@ from .db import MongoConnection
 from .errors import ApiError
 from .repositories.sessions import SessionRepository
 from .schemas import ErrorCode
+from .services.critic import CriticAdapter
 from .services.judge import JudgeAdapter
 from .services.orchestrator import SessionOrchestrator
 from .services.student import StudentAdapter
@@ -38,7 +39,8 @@ def get_judge() -> JudgeAdapter:
 
 
 def get_student() -> StudentAdapter:
-    return StudentAdapter()
+    critic = CriticAdapter() if get_settings().student_critic_enabled else None
+    return StudentAdapter(critic=critic)
 
 
 def get_orchestrator(

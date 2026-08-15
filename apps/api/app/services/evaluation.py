@@ -34,3 +34,21 @@ class JudgeEvaluation(BaseModel):
     unresolved_misconceptions: list[UnresolvedMisconception]
     newly_introduced_misconceptions: list[IntroducedMisconception]
     recommended_next_probe: str
+    # The mirror mechanism: which tracked misconception the learner's own
+    # explanation most invites, and the learner words that invite it. Selection
+    # advice only — the orchestrator still decides whether and what to pose.
+    most_likely_misconception_id: str | None = Field(
+        default=None,
+        description=(
+            "The rubric misconception id that the learner's latest explanation most "
+            "invites (an oversimplification or gap a student would over-generalize), "
+            "or null when none stands out."
+        ),
+    )
+    misconception_trigger_quote: str = Field(
+        default="",
+        description=(
+            "Short verbatim quote from the learner's latest explanation that invites "
+            "that misconception; empty when none stands out."
+        ),
+    )
