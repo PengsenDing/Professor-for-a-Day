@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { KeyboardEvent } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import {
@@ -35,12 +36,19 @@ import {
   transcribeAudio,
 } from "@/lib/api";
 import {
+  LEARNER_TRANSCRIPT_MS_PER_WORD,
+  STUDENT_FALLBACK_MS_PER_WORD,
+} from "@/lib/reveal";
+import {
   applyFinished,
   applyTurn,
+  consumeFreshSession,
   loadStoredSession,
   recordMastery,
   saveStoredSession,
 } from "@/lib/session-store";
+import { useReducedMotion } from "@/lib/use-reduced-motion";
+import { useRevealManager } from "@/lib/use-reveal-manager";
 import type { ChatMessage, InputMode, StoredSession } from "@/lib/types";
 import { MAX_LEARNER_TEXT_LENGTH, MODES } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -70,16 +78,22 @@ export default function SessionPage() {
   const audioCache = useRef(new Map<number, string>());
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  // Avatar "speaking" window: reading-time based, or audio-driven while TTS plays.
+  // Avatar "speaking" window while real TTS audio plays; the word-by-word
+  // reveal covers the muted/failed-voice case (see avatarState below).
   const [avatarSpeaking, setAvatarSpeaking] = useState(false);
-  const speakTimer = useRef<number | null>(null);
 
-  function avatarSpeak(text: string) {
-    if (speakTimer.current !== null) clearTimeout(speakTimer.current);
-    setAvatarSpeaking(true);
-    const duration = Math.min(2000 + text.length * 30, 9000);
-    speakTimer.current = window.setTimeout(() => setAvatarSpeaking(false), duration);
-  }
+  // Word-by-word reveal of AI Student replies and voice transcripts —
+  // a purely visual effect (the contract stays atomic JSON + one MP3).
+  const reducedMotion = useReducedMotion();
+  const {
+    begin: beginReveal,
+    attachAudio,
+    detachAudio,
+    detachAllAudio,
+    skip: skipReveal,
+    skipAll: skipAllReveals,
+    revealTexts,
+  } = useRevealManager(!reducedMotion);
 
   // One-shot celebration: the video character greets when mastery is reached.
   const [celebrateSignal, setCelebrateSignal] = useState(0);
@@ -120,12 +134,27 @@ export default function SessionPage() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [session?.messages.length, sending]);
 
+  // A revealing bubble keeps growing: stay pinned to the bottom while it
+  // does — unless the learner has scrolled up to re-read something.
+  const scrollAreaRef = useRef<HTMLDivElement>(null);
+  const stickToBottom = useRef(true);
+  function handleScroll() {
+    const el = scrollAreaRef.current;
+    if (!el) return;
+    stickToBottom.current =
+      el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+  }
+  useEffect(() => {
+    if (Object.keys(revealTexts).length === 0) return;
+    if (!stickToBottom.current) return;
+    bottomRef.current?.scrollIntoView({ behavior: "auto" });
+  }, [revealTexts]);
+
   useEffect(() => {
     const cache = audioCache.current;
     return () => {
       cache.forEach((url) => URL.revokeObjectURL(url));
       cache.clear();
-      if (speakTimer.current !== null) clearTimeout(speakTimer.current);
     };
   }, []);
 
@@ -138,31 +167,75 @@ export default function SessionPage() {
     recordMastery(next.concept.id, next.progress.percent);
   }
 
-  async function speak(turnNumber: number) {
-    if (!session) return;
-    setVoiceNote(null);
-    try {
-      let url = audioCache.current.get(turnNumber);
-      if (!url) {
-        const blob = await getTurnSpeech(session.session_id, turnNumber);
-        url = URL.createObjectURL(blob);
-        audioCache.current.set(turnNumber, url);
+  const speak = useCallback(
+    async (
+      sessionId: string,
+      turnNumber: number,
+      opts?: { revealId?: string; quietAutoplayBlock?: boolean },
+    ) => {
+      setVoiceNote(null);
+      try {
+        let url = audioCache.current.get(turnNumber);
+        if (!url) {
+          const blob = await getTurnSpeech(sessionId, turnNumber);
+          url = URL.createObjectURL(blob);
+          audioCache.current.set(turnNumber, url);
+        }
+        const audio = (audioRef.current ??= new Audio());
+        // A reveal paced by this element must let go before src changes.
+        detachAllAudio();
+        audio.src = url;
+        await audio.play();
+        setAvatarSpeaking(true);
+        // If this turn's reveal is still running, pace its remaining words
+        // across the audio so text and voice finish together.
+        if (opts?.revealId) attachAudio(opts.revealId, audio);
+        audio.onended = () => {
+          setAvatarSpeaking(false);
+          if (opts?.revealId) detachAudio(opts.revealId);
+        };
+      } catch (err) {
+        // The auto-spoken opening question may hit the browser's autoplay
+        // policy; that is not a speech failure worth a warning.
+        if (
+          opts?.quietAutoplayBlock &&
+          err instanceof DOMException &&
+          err.name === "NotAllowedError"
+        ) {
+          return;
+        }
+        // Non-blocking by contract: the text reply stays usable.
+        setVoiceNote(
+          err instanceof Error ? err.message : "Speech playback failed.",
+        );
       }
-      audioRef.current ??= new Audio();
-      audioRef.current.src = url;
-      await audioRef.current.play();
-      // Audio is playing: let it drive the avatar's speaking window instead
-      // of the reading-time estimate.
-      if (speakTimer.current !== null) clearTimeout(speakTimer.current);
-      setAvatarSpeaking(true);
-      audioRef.current.onended = () => setAvatarSpeaking(false);
-    } catch (err) {
-      // Non-blocking by contract: the text reply stays usable.
-      setVoiceNote(
-        err instanceof Error ? err.message : "Speech playback failed.",
-      );
-    }
-  }
+    },
+    [attachAudio, detachAudio, detachAllAudio],
+  );
+
+  // A brand-new session (marker set by the home page) animates and speaks
+  // its opening question once; a refresh renders history instantly.
+  const freshHandled = useRef(false);
+  useEffect(() => {
+    if (!session || freshHandled.current) return;
+    freshHandled.current = true;
+    if (!consumeFreshSession(session.session_id)) return;
+    const opening = session.messages[0];
+    if (opening?.role !== "student") return;
+    const sessionId = session.session_id;
+    // Deferred so the effect body stays render-clean; deliberately not
+    // cleared on cleanup — StrictMode's double-invoke would cancel it and
+    // freshHandled blocks the second run from rescheduling.
+    window.setTimeout(() => {
+      beginReveal(opening.id, opening.text, STUDENT_FALLBACK_MS_PER_WORD);
+      if (voiceOn) {
+        void speak(sessionId, 0, {
+          revealId: opening.id,
+          quietAutoplayBlock: true,
+        });
+      }
+    }, 0);
+  }, [session, voiceOn, beginReveal, speak]);
 
   async function submit(turn: PendingTurn) {
     if (!session || sending) return;
@@ -175,10 +248,22 @@ export default function SessionPage() {
         input_mode: turn.input_mode,
         client_turn_id: turn.client_turn_id,
       });
-      updateSession(applyTurn(session, envelope));
+      const next = applyTurn(session, envelope, turn.client_turn_id);
+      updateSession(next);
       setPendingTurn(null);
-      if (envelope.status === "active") avatarSpeak(envelope.student_text);
-      if (voiceOn && envelope.status === "active") void speak(envelope.turn_number);
+      // The reply (applyTurn appends it last) reveals word by word — the
+      // session's final message included, which the ended banner waits for.
+      const studentMessage = next.messages[next.messages.length - 1];
+      beginReveal(
+        studentMessage.id,
+        studentMessage.text,
+        STUDENT_FALLBACK_MS_PER_WORD,
+      );
+      if (voiceOn && envelope.status === "active") {
+        void speak(session.session_id, envelope.turn_number, {
+          revealId: studentMessage.id,
+        });
+      }
     } catch (err) {
       setTurnError(
         err instanceof Error ? err.message : "Failed to submit your explanation.",
@@ -192,12 +277,15 @@ export default function SessionPage() {
     const text = input.trim();
     if (!text) return;
     setInput("");
+    skipAllReveals();
     // New submission → new idempotency key. Retries reuse pendingTurn's key.
     void submit({ client_turn_id: crypto.randomUUID(), text, input_mode: "text" });
   }
 
   async function startRecording() {
     if (recording || sending || transcribing) return;
+    // Starting to talk means the learner has moved on from the reveal.
+    skipAllReveals();
     setVoiceNote(null);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -243,8 +331,17 @@ export default function SessionPage() {
     try {
       const { transcript } = await transcribeAudio(audio);
       if (transcript.trim()) {
+        // The transcript reveals word by word on the optimistic pending
+        // bubble, filling the Judge wait; keyed by client_turn_id so the
+        // confirmed message continues seamlessly instead of restarting.
+        const clientTurnId = crypto.randomUUID();
+        beginReveal(
+          clientTurnId,
+          transcript.trim(),
+          LEARNER_TRANSCRIPT_MS_PER_WORD,
+        );
         await submit({
-          client_turn_id: crypto.randomUUID(),
+          client_turn_id: clientTurnId,
           text: transcript.trim(),
           input_mode: "voice",
         });
@@ -263,6 +360,8 @@ export default function SessionPage() {
 
   async function finishAndReport() {
     if (!session || finishing) return;
+    // Finishing is the strongest "moved on" signal: snap any running reveal.
+    skipAllReveals();
     if (session.status === "ended") {
       router.push(`/session/${session.session_id}/report`);
       return;
@@ -304,6 +403,11 @@ export default function SessionPage() {
   const percent = session.progress.percent;
   const ended = session.status === "ended";
   const busy = sending || transcribing;
+  // Only the newest reply ever animates, so "any student message revealing"
+  // means the student is mid-speech (drives the avatar and the ended banner).
+  const studentRevealing = session.messages.some(
+    (m) => m.role === "student" && m.id in revealTexts,
+  );
 
   // Conversation lifecycle → avatar state (priority order matters).
   const avatarState: StudentAvatarState = ended
@@ -314,7 +418,7 @@ export default function SessionPage() {
       ? "thinking"
       : turnError
         ? "confused"
-        : avatarSpeaking
+        : avatarSpeaking || studentRevealing
           ? "speaking"
           : recording || input.trim().length > 0
             ? "listening"
@@ -361,7 +465,17 @@ export default function SessionPage() {
             className="shrink-0"
             aria-label={voiceOn ? "Mute spoken replies" : "Unmute spoken replies"}
             aria-pressed={voiceOn}
-            onClick={() => setVoiceOn((v) => !v)}
+            onClick={() => {
+              const next = !voiceOn;
+              setVoiceOn(next);
+              if (!next) {
+                // Mute stops the current audio; a running reveal degrades
+                // to fallback pacing from wherever it is.
+                audioRef.current?.pause();
+                setAvatarSpeaking(false);
+                detachAllAudio();
+              }
+            }}
           >
             {voiceOn ? <Volume2 className="size-4" /> : <VolumeX className="size-4" />}
           </Button>
@@ -429,6 +543,8 @@ export default function SessionPage() {
           </div>
 
           <div
+            ref={scrollAreaRef}
+            onScroll={handleScroll}
             className={cn(
               "space-y-4 overflow-y-auto p-4",
               conversationStarted && "flex-1",
@@ -439,19 +555,29 @@ export default function SessionPage() {
                 key={m.id}
                 message={m}
                 session={session}
-                onSpeak={speak}
+                onSpeak={(turnNumber) => speak(session.session_id, turnNumber)}
+                revealText={revealTexts[m.id] ?? null}
+                onSkipReveal={() => skipReveal(m.id)}
               />
             ))}
             {pendingTurn && sending && (
               <MessageBubble
                 message={{
-                  id: "pending",
+                  id: pendingTurn.client_turn_id,
                   role: "learner",
                   text: pendingTurn.text,
                 }}
                 session={session}
-                onSpeak={speak}
+                onSpeak={(turnNumber) => speak(session.session_id, turnNumber)}
+                revealText={revealTexts[pendingTurn.client_turn_id] ?? null}
+                onSkipReveal={() => skipReveal(pendingTurn.client_turn_id)}
               />
+            )}
+            {recording && (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Mic className="size-3.5 animate-pulse" />
+                Listening…
+              </div>
             )}
             {transcribing && (
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -459,7 +585,7 @@ export default function SessionPage() {
                 Transcribing your explanation…
               </div>
             )}
-            {ended && (
+            {ended && !studentRevealing && (
               <div className="rounded-lg border border-emerald-500/40 bg-emerald-50 p-4 text-sm dark:bg-emerald-500/10">
                 <p className="font-medium">
                   {session.end_reason === "mastery"
@@ -496,6 +622,7 @@ export default function SessionPage() {
                         size="sm"
                         variant="ghost"
                         onClick={() => {
+                          skipReveal(pendingTurn.client_turn_id);
                           setPendingTurn(null);
                           setTurnError(null);
                         }}
@@ -521,7 +648,12 @@ export default function SessionPage() {
               rows={2}
               className="max-h-40 resize-none rounded-2xl"
               disabled={busy || ended}
-              onChange={(e) => setInput(e.target.value)}
+              onChange={(e) => {
+                setInput(e.target.value);
+                // Typing the next explanation means the learner has moved
+                // on: snap any running reveal to complete.
+                if (e.target.value.trim()) skipAllReveals();
+              }}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault();
@@ -594,16 +726,45 @@ function MessageBubble({
   message,
   session,
   onSpeak,
+  revealText,
+  onSkipReveal,
 }: {
   message: ChatMessage;
   session: StoredSession;
   onSpeak: (turnNumber: number) => void;
+  /** Visible prefix while the message reveals word by word; null = full text. */
+  revealText: string | null;
+  onSkipReveal: () => void;
 }) {
+  const revealing = revealText !== null;
+  const text = revealing ? revealText : message.text;
+  // While revealing, the bubble body doubles as a skip control (the replay
+  // button sits outside it, so the two never collide).
+  const skipProps = revealing
+    ? {
+        role: "button" as const,
+        tabIndex: 0,
+        "aria-label": "Show the full message now",
+        onClick: onSkipReveal,
+        onKeyDown: (e: KeyboardEvent<HTMLDivElement>) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onSkipReveal();
+          }
+        },
+      }
+    : {};
   if (message.role === "learner") {
     return (
       <div className="flex justify-end">
-        <div className="max-w-[80%] whitespace-pre-wrap rounded-2xl rounded-br-sm bg-primary px-4 py-2.5 text-sm text-primary-foreground">
-          {message.text}
+        <div
+          {...skipProps}
+          className={cn(
+            "max-w-[80%] whitespace-pre-wrap rounded-2xl rounded-br-sm bg-primary px-4 py-2.5 text-sm text-primary-foreground",
+            revealing && "cursor-pointer",
+          )}
+        >
+          {text}
         </div>
       </div>
     );
@@ -629,8 +790,14 @@ function MessageBubble({
             </button>
           )}
         </div>
-        <div className="whitespace-pre-wrap rounded-2xl rounded-tl-sm border bg-muted/40 px-4 py-2.5 text-sm">
-          {message.text}
+        <div
+          {...skipProps}
+          className={cn(
+            "whitespace-pre-wrap rounded-2xl rounded-tl-sm border bg-muted/40 px-4 py-2.5 text-sm",
+            revealing && "cursor-pointer",
+          )}
+        >
+          {text}
         </div>
       </div>
     </div>

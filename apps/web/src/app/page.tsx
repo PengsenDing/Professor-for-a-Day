@@ -15,6 +15,7 @@ import { CHARACTER_BY_MODE } from "@/lib/characters";
 import { getCurriculum, startSession } from "@/lib/api";
 import {
   loadMastery,
+  markFreshSession,
   saveStoredSession,
   sessionFromCreated,
 } from "@/lib/session-store";
@@ -112,6 +113,7 @@ export default function HomePage() {
     try {
       const created = await startSession({ concept_id: selected.id, mode });
       saveStoredSession(sessionFromCreated(created));
+      markFreshSession(created.session_id);
       router.push(`/session/${created.session_id}`);
     } catch (err) {
       setStartError(
