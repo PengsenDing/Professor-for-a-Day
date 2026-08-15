@@ -25,6 +25,7 @@ import { Progress } from "@/components/ui/progress";
 import { Textarea } from "@/components/ui/textarea";
 import { CharacterVideoAvatar } from "@/components/character-video-avatar";
 import { ComposerSphere } from "@/components/composer-sphere";
+import { ProgressGainChips } from "@/components/progress-gain-chips";
 import { SessionInsightSphere } from "@/components/session-insight-sphere";
 import type { StudentAvatarState } from "@/components/student-avatar";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -37,6 +38,8 @@ import {
   submitTurn,
   transcribeAudio,
 } from "@/lib/api";
+import type { GainChip } from "@/lib/progress-gain";
+import { buildGainChips } from "@/lib/progress-gain";
 import {
   LEARNER_TRANSCRIPT_MS_PER_WORD,
   STUDENT_FALLBACK_MS_PER_WORD,
@@ -97,6 +100,44 @@ export default function SessionPage() {
     skipAll: skipAllReveals,
     revealTexts,
   } = useRevealManager(!reducedMotion);
+
+  // Progress gains celebrate before they count: the bar freezes at its
+  // pre-turn value while each confirmed point (or cleared misconception)
+  // shows as a chip that flies into the bar; landing advances the displayed
+  // percent. Null = nothing in flight, show the stored percent.
+  const [displayedPercent, setDisplayedPercent] = useState<number | null>(null);
+  const [gainChips, setGainChips] = useState<GainChip[]>([]);
+  const headerBarRef = useRef<HTMLDivElement>(null);
+  const mobileBarRef = useRef<HTMLDivElement>(null);
+
+  // The chips need whichever progress bar is actually on screen: the header
+  // copy exists on sm+ only, the inline copy only below that breakpoint.
+  const getVisibleBar = useCallback(() => {
+    for (const bar of [headerBarRef.current, mobileBarRef.current]) {
+      if (bar && bar.offsetWidth > 0) return bar;
+    }
+    return null;
+  }, []);
+
+  const handleChipConsumed = useCallback(
+    (chip: GainChip) => {
+      setGainChips((chips) => chips.filter((c) => c.key !== chip.key));
+      // Monotonic like the percent itself: a late-landing chip never drags
+      // the bar backwards under a newer one.
+      setDisplayedPercent((p) => Math.max(p ?? 0, chip.percentAfter));
+      if (!reducedMotion) {
+        // A short glow where the chip merged, in step with the width tween.
+        getVisibleBar()?.animate(
+          [
+            { boxShadow: "0 0 0 0 rgb(16 185 129 / 0.5)" },
+            { boxShadow: "0 0 0 10px rgb(16 185 129 / 0)" },
+          ],
+          { duration: 700, easing: "ease-out" },
+        );
+      }
+    },
+    [getVisibleBar, reducedMotion],
+  );
 
   // One-shot celebration: the video character greets when mastery is reached.
   const [celebrateSignal, setCelebrateSignal] = useState(0);
@@ -272,6 +313,17 @@ export default function SessionPage() {
         input_mode: turn.input_mode,
         client_turn_id: turn.client_turn_id,
       });
+      // Queue the celebration before the session state lands so the frozen
+      // pre-turn percent and the new messages render in the same batch.
+      const chips = buildGainChips(
+        envelope,
+        session.progress.percent,
+        session.active_misconception,
+      );
+      if (chips.length > 0) {
+        setDisplayedPercent((p) => p ?? session.progress.percent);
+        setGainChips((queue) => [...queue, ...chips]);
+      }
       const next = applyTurn(session, envelope, turn.client_turn_id);
       updateSession(next);
       setPendingTurn(null);
@@ -459,7 +511,9 @@ export default function SessionPage() {
   if (!session) return null;
 
   const mode = MODES[session.mode];
-  const percent = session.progress.percent;
+  // While gain chips are in flight the bar shows the frozen/staged value;
+  // otherwise the stored percent (they re-converge on the last chip).
+  const percent = displayedPercent ?? session.progress.percent;
   const ended = session.status === "ended";
   const busy = sending || transcribing;
   // Only the newest reply ever animates, so "any student message revealing"
@@ -518,7 +572,10 @@ export default function SessionPage() {
                 <span className="text-muted-foreground">Progress</span>
                 <span className="font-medium tabular-nums">{percent}%</span>
               </div>
-              <Progress value={percent} className="h-2" />
+              {/* Ref'd wrapper: the flight target and merge-glow surface. */}
+              <div ref={headerBarRef} className="rounded-full">
+                <Progress value={percent} className="h-2" />
+              </div>
             </div>
           </div>
           <ThemeToggle className="shrink-0" />
@@ -571,7 +628,9 @@ export default function SessionPage() {
               <span className="text-muted-foreground">Progress</span>
               <span className="font-medium tabular-nums">{percent}%</span>
             </div>
-            <Progress value={percent} className="h-2" />
+            <div ref={mobileBarRef} className="rounded-full">
+              <Progress value={percent} className="h-2" />
+            </div>
           </div>
 
           {/* The student: centered and large before the first turn, then a
@@ -808,6 +867,13 @@ export default function SessionPage() {
           </div>
         </section>
       </div>
+
+      <ProgressGainChips
+        queue={gainChips}
+        getTarget={getVisibleBar}
+        reducedMotion={reducedMotion}
+        onConsumed={handleChipConsumed}
+      />
     </div>
   );
 }
