@@ -294,23 +294,6 @@ Superseded by the frozen contract (read them through the OpenAPI document):
   boundary. Neither role imports an HTTP client or reads credentials directly.
 - **AC-STU-6** — The AI Student's misconception is drawn from, or consistent with, the
   concept's rubric misconceptions, so the Judge can track its resolution by id.
-- **AC-STU-7** — When `STUDENT_CRITIC_ENABLED` is true, a Student Critic LLM reviews each
-  *generated* pose/press/probe reply (after the deterministic checks pass) for exactly two
-  criteria: answer-leakage (the reply states or implies the correct content the learner is
-  supposed to supply) and directive fidelity (the reply carries out its assigned belief or
-  probe). The verdict carries per-criterion `violated` flags with verbatim evidence quotes
-  and a 0–1 `score` that is telemetry only — no code path branches on the score.
-- **AC-STU-8** — A violated verdict triggers exactly one regeneration whose prompt names the
-  violations and evidence. The regenerated reply is accepted after the deterministic checks
-  alone — deliberately no second critic review — and if it fails them, the pre-authored
-  fallback line ships. Worst case is one critic call and one extra generation per turn.
-- **AC-STU-9** — The critic never reviews opening questions, farewells, or pre-authored
-  fallback lines, and it fails open: after one bounded retry, any critic error or
-  unparseable output accepts the code-validated reply and logs a WARNING. Disabling the
-  flag restores pre-critic behavior exactly, with zero critic calls.
-- **AC-STU-10** — The critic verdict for the reply that shipped is persisted on the turn
-  document (`{violations, score, regenerated}`, or `null` when no review ran) and never
-  appears in any API response.
 
 ### H. Session end and Teacher Report — `AC-END`
 
@@ -514,7 +497,6 @@ overrides plus a test repository.
 | T20 | Repository integration against a real test MongoDB, skipped when absent | AC-PER-9 |
 | T21 | Opt-in smoke: both LLM roles produce parseable output against live DeutschlandGPT | AC-JDG-1, AC-STU-1 |
 | T22 | Opt-in smoke: real ElevenLabs transcription and synthesis | AC-STT-1, AC-TTS-1,3 |
-| T23 | Student Critic: one evidence-fed regeneration, fail-open, exempt replies, persisted verdict | AC-STU-7…10 |
 
 T21 and T22 are opt-in and must not run in CI or in a default local run.
 

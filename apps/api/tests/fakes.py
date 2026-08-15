@@ -3,7 +3,6 @@
 import copy
 from typing import Any
 
-from app.services.critic import CriticVerdict
 from app.services.evaluation import (
     DemonstratedPoint,
     IntroducedMisconception,
@@ -14,7 +13,6 @@ from app.services.exceptions import (
     SpeechSynthesisError,
     TranscriptionError,
 )
-from app.services.student import StudentReply
 
 EMPTY_EVALUATION = JudgeEvaluation(
     newly_demonstrated_points=[],
@@ -161,9 +159,6 @@ class FakeStudent:
         self.reply_calls: list[dict[str, Any]] = []
         self.fail_opening = False
         self.fail_reply = False
-        # Attach to simulate a critic-reviewed (and possibly regenerated) reply.
-        self.critic_verdict: CriticVerdict | None = None
-        self.regenerated = False
 
     async def opening_question(self, *, rubric, concept_title, mode) -> str:
         self.call_log.append("student_opening")
@@ -187,7 +182,7 @@ class FakeStudent:
         press,
         session_ended,
         pose_trigger=None,
-    ) -> StudentReply:
+    ) -> str:
         self.call_log.append("student_reply")
         self.reply_calls.append(
             {
@@ -203,16 +198,12 @@ class FakeStudent:
         if self.fail_reply:
             raise GenerationError("scripted reply failure")
         if session_ended:
-            text = "Thanks for teaching me!"
-        elif pose is not None:
-            text = f"But I thought: {pose.summary}"
-        elif press is not None:
-            text = f"I still think: {press.summary}"
-        else:
-            text = "Interesting — can you tell me more?"
-        return StudentReply(
-            text=text, regenerated=self.regenerated, critic=self.critic_verdict
-        )
+            return "Thanks for teaching me!"
+        if pose is not None:
+            return f"But I thought: {pose.summary}"
+        if press is not None:
+            return f"I still think: {press.summary}"
+        return "Interesting — can you tell me more?"
 
 
 class FakeSpeechService:

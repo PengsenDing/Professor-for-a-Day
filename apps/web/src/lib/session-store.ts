@@ -13,6 +13,7 @@ import type {
 const SESSIONS_KEY = "pfad:sessions";
 const MASTERY_KEY = "pfad:mastery";
 const GRAPH_ARRANGEMENT_KEY = "pfad:graph-arrangement";
+const FRESH_SESSION_KEY = "pfad:fresh-session";
 
 // ---------------------------------------------------------------------------
 // Session snapshots
@@ -67,9 +68,12 @@ export function sessionFromCreated(created: SessionCreated): StoredSession {
 export function applyTurn(
   session: StoredSession,
   envelope: TurnEnvelope,
+  // The turn's client_turn_id, so the optimistic pending bubble and the
+  // confirmed message share one identity (a running reveal never restarts).
+  learnerMessageId?: string,
 ): StoredSession {
   const learnerMessage: ChatMessage = {
-    id: crypto.randomUUID(),
+    id: learnerMessageId ?? crypto.randomUUID(),
     role: "learner",
     text: envelope.learner_transcript,
   };
@@ -108,6 +112,31 @@ export function applyFinished(
     end_reason: finished.end_reason,
     report: finished.report,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Fresh-session marker: sessions load from localStorage, so the opening
+// question is already stored before the session page ever mounts. This
+// one-shot sessionStorage flag is how the page tells a brand-new session
+// (animate + speak the opening question once) apart from a refresh (don't).
+
+export function markFreshSession(sessionId: string) {
+  try {
+    window.sessionStorage.setItem(FRESH_SESSION_KEY, sessionId);
+  } catch {
+    // Storage unavailable: the opening question simply renders instantly.
+  }
+}
+
+/** True exactly once per fresh session; consuming clears the marker. */
+export function consumeFreshSession(sessionId: string): boolean {
+  try {
+    const fresh = window.sessionStorage.getItem(FRESH_SESSION_KEY) === sessionId;
+    if (fresh) window.sessionStorage.removeItem(FRESH_SESSION_KEY);
+    return fresh;
+  } catch {
+    return false;
+  }
 }
 
 // ---------------------------------------------------------------------------

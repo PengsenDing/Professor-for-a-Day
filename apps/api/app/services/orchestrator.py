@@ -35,7 +35,7 @@ from .exceptions import GenerationError
 from .judge import JudgeAdapter
 from .report import build_report
 from .scoring import ScoringState, apply_evaluation, pose_misconception
-from .student import StudentAdapter, StudentReply
+from .student import StudentAdapter
 
 logger = logging.getLogger(__name__)
 
@@ -197,10 +197,10 @@ class SessionOrchestrator:
             if ended and end_reason is EndReason.mastery:
                 # The moment of victory is scripted, not generated: the Judge just
                 # resolved the challenge, so the concession can never drift.
-                student_reply = StudentReply(text=MASTERY_CLOSING_LINE)
+                student_text = MASTERY_CLOSING_LINE
             else:
                 try:
-                    student_reply = await self._student.reply(
+                    student_text = await self._student.reply(
                         rubric=rubric,
                         concept_title=self._concept_title(document["concept_id"]),
                         mode=mode,
@@ -238,18 +238,7 @@ class SessionOrchestrator:
                 "client_turn_id": str(request.client_turn_id),
                 "learner_text": request.learner_text,
                 "input_mode": request.input_mode.value,
-                "student_text": student_reply.text,
-                # Internal quality trail (AC-STU-10): the critic's verdict for the
-                # reply that shipped, never surfaced in any API response.
-                "critic": (
-                    {
-                        "violations": student_reply.critic.violations(),
-                        "score": student_reply.critic.score,
-                        "regenerated": student_reply.regenerated,
-                    }
-                    if student_reply.critic is not None
-                    else None
-                ),
+                "student_text": student_text,
                 "evaluation": evaluation.model_dump(),
                 "progress_percent": percent,
                 "newly_covered_points": [point.model_dump() for point in newly_covered],
@@ -306,7 +295,7 @@ class SessionOrchestrator:
             return TurnEnvelope(
                 turn_number=turn_number,
                 learner_transcript=request.learner_text,
-                student_text=student_reply.text,
+                student_text=student_text,
                 progress=Progress(percent=percent),
                 newly_covered_points=newly_covered,
                 active_misconception=active,
@@ -320,36 +309,40 @@ class SessionOrchestrator:
     # -- finish -------------------------------------------------------------
 
     async def finish(self, session_id: str) -> SessionFinished:
-        document = await self._get_or_404(session_id)
+        # The same lock submit_turn holds: finishing while a turn is in flight
+        # would otherwise persist a report built from the pre-turn state.
+        lock = _SESSION_LOCKS.setdefault(session_id, asyncio.Lock())
+        async with lock:
+            document = await self._get_or_404(session_id)
 
-        if document["status"] == "ended":
-            return _finished_from_document(document)
+            if document["status"] == "ended":
+                return _finished_from_document(document)
 
-        rubric = self._rubrics[document["concept_id"]]
-        state = _state_from_document(document)
-        percent = document["progress_percent"]
-        report = build_report(
-            rubric=rubric,
-            catalog=self._catalog,
-            concept_id=document["concept_id"],
-            state=state,
-            final_percent=percent,
-        )
-        updated = await self._repository.finish(
-            session_id,
-            end_reason=EndReason.learner_finished.value,
-            final_percent=percent,
-            report=report.model_dump(),
-        )
-        if updated is None:
-            raise _session_not_found()
-        logger.info(
-            "session ended session_id=%s end_reason=%s progress_percent=%d",
-            session_id,
-            updated["end_reason"],
-            updated["progress_percent"],
-        )
-        return _finished_from_document(updated)
+            rubric = self._rubrics[document["concept_id"]]
+            state = _state_from_document(document)
+            percent = document["progress_percent"]
+            report = build_report(
+                rubric=rubric,
+                catalog=self._catalog,
+                concept_id=document["concept_id"],
+                state=state,
+                final_percent=percent,
+            )
+            updated = await self._repository.finish(
+                session_id,
+                end_reason=EndReason.learner_finished.value,
+                final_percent=percent,
+                report=report.model_dump(),
+            )
+            if updated is None:
+                raise _session_not_found()
+            logger.info(
+                "session ended session_id=%s end_reason=%s progress_percent=%d",
+                session_id,
+                updated["end_reason"],
+                updated["progress_percent"],
+            )
+            return _finished_from_document(updated)
 
     # -- speech lookup ------------------------------------------------------
 

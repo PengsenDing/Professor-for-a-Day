@@ -41,7 +41,7 @@ class Settings(BaseSettings):
     transcription_max_bytes: int = Field(default=15_000_000, gt=0)
 
     port: int = 8787
-    web_origin: str = "http://localhost:5173"
+    web_origin: str = "http://localhost:3000"
 
     mongodb_uri: str = "mongodb://localhost:27017"
     mongodb_database: str = "professor_for_a_day"
@@ -60,10 +60,6 @@ class Settings(BaseSettings):
     # handed, so shallow reasoning keeps replies fast and cheap.
     judge_reasoning_effort: ReasoningEffort = "medium"
     student_reasoning_effort: ReasoningEffort = "low"
-
-    # Kill switch for the Student Critic (the semantic reviewer of AI Student
-    # replies). Off = the pipeline behaves exactly as before the critic existed.
-    student_critic_enabled: bool = True
 
     log_level: str = "INFO"
 
