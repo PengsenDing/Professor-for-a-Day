@@ -66,7 +66,7 @@ apps/api/
 │   ├── routes/              # client-facing API routes (thin; logic lives in the orchestrator)
 │   │   ├── health.py        # GET /health (includes database status)
 │   │   ├── curriculum.py    # GET /api/curriculum
-│   │   ├── sessions.py      # POST /api/sessions, /turns, /finish, GET .../speech
+│   │   ├── sessions.py      # POST /api/sessions, /turns, /finish; GET /{id} (snapshot), GET .../speech
 │   │   └── speech.py        # POST /api/speech/transcriptions
 │   ├── services/
 │   │   ├── llm.py           # LangChain provider (DeutschlandGPT; the only module that knows the vendor)
@@ -100,6 +100,14 @@ apps/api/
    counters land in a single `update_one` (AC-TRN-9 / AC-PER-10). Retries with
    the same `client_turn_id` replay the stored envelope without any provider
    call (AC-IDM).
+
+### Session resume
+
+Sessions are resumable (ADR-0004): `GET /api/sessions/{session_id}` rebuilds a
+learner-safe `SessionSnapshot` from the stored document — the full conversation,
+progress, and report once ended — with no provider call and no mutation. The
+persisted Judge evaluation never appears in it. The web app stays
+localStorage-first and uses the snapshot only when it has no local copy.
 
 ### Speech
 
@@ -186,7 +194,6 @@ Ground rules:
 ## Explicitly not implemented
 
 - User accounts and cross-device sync (sessions are anonymous)
-- `GET /api/sessions/{id}`: losing the session on a browser refresh is by design
 - Server-side audio caching or persistence (ADR-0003)
 - Production Mongo auth, replica sets, and migration strategy
 - CI/CD, containers, and production deployment configuration

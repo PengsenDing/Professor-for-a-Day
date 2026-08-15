@@ -12,8 +12,10 @@ import { StartTeachingSphere } from "@/components/start-teaching-sphere";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { StudentVideoPickerAvatar } from "@/components/student-video-picker-avatar";
 import { CHARACTER_BY_MODE } from "@/lib/characters";
-import { getCurriculum, startSession } from "@/lib/api";
+import { finishSession, getCurriculum, startSession } from "@/lib/api";
 import {
+  applyFinished,
+  loadActiveStoredSessions,
   loadMastery,
   markFreshSession,
   saveStoredSession,
@@ -106,12 +108,25 @@ export default function HomePage() {
 
   const selected = curriculum?.concepts.find((c) => c.id === conceptId) ?? null;
 
+  // Starting a new session abandons any still-active one. Best-effort finish
+  // each orphan so every session reaches a terminal state with a Teacher
+  // Report (finishSession is idempotent); failures just leave it active.
+  function finishAbandonedSessions(excludeSessionId: string) {
+    for (const stale of loadActiveStoredSessions()) {
+      if (stale.session_id === excludeSessionId) continue;
+      void finishSession(stale.session_id)
+        .then((finished) => saveStoredSession(applyFinished(stale, finished)))
+        .catch(() => {});
+    }
+  }
+
   async function start() {
     if (!selected || !mode || pending) return;
     setPending(true);
     setStartError(null);
     try {
       const created = await startSession({ concept_id: selected.id, mode });
+      finishAbandonedSessions(created.session_id);
       saveStoredSession(sessionFromCreated(created));
       markFreshSession(created.session_id);
       router.push(`/session/${created.session_id}`);

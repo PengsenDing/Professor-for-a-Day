@@ -53,6 +53,8 @@ This file is an orientation summary. When it disagrees with the documents below,
      version-controlled backend data; the LLM never adds, deletes, or rewires nodes).
    - 0003: speech is synthesized on fetch (no audio in JSON envelopes; clients fetch
      `audio/mpeg` per turn and cache the blob for replay).
+   - 0004: sessions are resumable via `GET /api/sessions/{session_id}` (a learner-safe
+     `SessionSnapshot`; the web app stays localStorage-first and uses it as fallback).
 
 ## 3. Repository layout and technology
 
@@ -100,6 +102,7 @@ Defined in `packages/shared/openapi.yaml` — read it before touching any route.
 GET  /health                                                # process + DB health, no LLM call
 GET  /api/curriculum                                        # 15 Concepts + prerequisite edges, no LLM call
 POST /api/sessions                                          # start a session -> opening question (turn 0)
+GET  /api/sessions/{session_id}                             # learner-safe session snapshot (resume), no LLM call
 POST /api/sessions/{session_id}/turns                       # submit one learner explanation
 POST /api/sessions/{session_id}/finish                      # finish early -> Teacher Report (idempotent)
 GET  /api/sessions/{session_id}/turns/{turn_number}/speech  # synthesize one AI Student reply (audio/mpeg)
@@ -111,6 +114,11 @@ contract; the stateless chat behavior is not the Teaching Session contract.
 
 Contract behaviors to preserve:
 
+- **The session snapshot is a learner-safe projection** (ADR-0004). `GET
+  /api/sessions/{session_id}` never invokes a provider, never mutates the session, and
+  never exposes the persisted Judge evaluation, probe recommendations, or rubric
+  internals. The web app is localStorage-first and fetches the snapshot only when no
+  local copy exists.
 - **Turns are text-only JSON.** A voice turn is transcribed first via
   `POST /api/speech/transcriptions`, then submitted through the ordinary turn contract
   with `input_mode: "voice"`. Transcription touches nothing else — no turn, no session

@@ -20,12 +20,15 @@ from ..schemas import (
     Curriculum,
     EndReason,
     ErrorCode,
+    InputMode,
     Mode,
     Progress,
     RubricPointRef,
     SessionCreated,
     SessionFinished,
+    SessionSnapshot,
     SessionStatus,
+    SnapshotTurn,
     StartSessionRequest,
     SubmitTurnRequest,
     TeacherReport,
@@ -343,6 +346,50 @@ class SessionOrchestrator:
                 updated["progress_percent"],
             )
             return _finished_from_document(updated)
+
+    # -- snapshot -----------------------------------------------------------
+
+    async def get_snapshot(self, session_id: str) -> SessionSnapshot:
+        """Learner-safe read model of a stored session (AC-SES-7 / AC-SES-10).
+
+        Read-only: no provider call, no mutation, no lock. Each turn is
+        projected field-by-field so the persisted Judge evaluation can never
+        leak into a response.
+        """
+        document = await self._get_or_404(session_id)
+        rubric = self._rubrics[document["concept_id"]]
+        state = _state_from_document(document)
+        report = document.get("report")
+        return SessionSnapshot(
+            session_id=str(document["_id"]),
+            concept=ConceptRef(
+                id=document["concept_id"],
+                title=self._concept_title(document["concept_id"]),
+            ),
+            mode=Mode(document["mode"]),
+            opening_text=document["opening_text"],
+            turns=[
+                SnapshotTurn(
+                    turn_number=turn["turn_number"],
+                    learner_transcript=turn["learner_text"],
+                    input_mode=InputMode(turn["input_mode"]),
+                    student_text=turn["student_text"],
+                    newly_covered_points=[
+                        RubricPointRef.model_validate(point)
+                        for point in turn["newly_covered_points"]
+                    ],
+                )
+                for turn in document["turns"]
+            ],
+            progress=Progress(percent=document["progress_percent"]),
+            active_misconception=_active_misconception(rubric, state),
+            learner_turn_count=document["learner_turn_count"],
+            turns_remaining=max(self._max_turns - document["learner_turn_count"], 0),
+            status=SessionStatus(document["status"]),
+            end_reason=EndReason(document["end_reason"]) if document["end_reason"] else None,
+            report=TeacherReport.model_validate(report) if report else None,
+            created_at=document["created_at"],
+        )
 
     # -- speech lookup ------------------------------------------------------
 

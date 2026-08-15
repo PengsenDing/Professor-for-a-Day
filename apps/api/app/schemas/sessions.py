@@ -1,5 +1,6 @@
 """Teaching Session contract schemas: lifecycle, turn envelope, Teacher Report."""
 
+from datetime import datetime
 from enum import StrEnum
 from typing import Annotated, Literal
 from uuid import UUID
@@ -165,3 +166,47 @@ class SessionFinished(BaseModel):
     end_reason: EndReason
     progress: Progress
     report: TeacherReport
+
+
+class SnapshotTurn(BaseModel):
+    turn_number: Annotated[int, Field(ge=1)]
+    learner_transcript: str = Field(description="The learner text that was judged.")
+    input_mode: InputMode
+    student_text: str = Field(
+        min_length=1,
+        description="The AI Student's reply. Fetch its audio at this turn_number.",
+    )
+    newly_covered_points: list[RubricPointRef] = Field(
+        description=(
+            "Rubric points confirmed on this turn only. Cumulative coverage is "
+            "derivable client-side."
+        )
+    )
+
+
+class SessionSnapshot(BaseModel):
+    """Learner-safe read model of a stored session (AC-SES-7 / AC-SES-10, ADR-0004).
+
+    Judge evaluations, rubric internals, and probe recommendations never appear.
+    """
+
+    session_id: str
+    concept: ConceptRef
+    mode: Mode
+    opening_text: str = Field(
+        min_length=1,
+        description="The AI Student's opening question. Fetch its audio at turn_number 0.",
+    )
+    turns: list[SnapshotTurn] = Field(
+        description="Every accepted learner turn in order. Judge evaluations never appear."
+    )
+    progress: Progress
+    active_misconception: ActiveMisconception | None
+    learner_turn_count: Annotated[int, Field(ge=0)]
+    turns_remaining: Annotated[int, Field(ge=0)]
+    status: SessionStatus
+    end_reason: EndReason | None = Field(description="Null while active.")
+    report: TeacherReport | None = Field(
+        description="Null while active; the stored Teacher Report once ended."
+    )
+    created_at: datetime = Field(description="When the session was started.")

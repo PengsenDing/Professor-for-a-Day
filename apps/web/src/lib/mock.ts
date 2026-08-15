@@ -12,6 +12,7 @@ import type {
   RubricPointRef,
   SessionCreated,
   SessionFinished,
+  SessionSnapshot,
   StartSessionRequest,
   SubmitTurnRequest,
   TeacherReport,
@@ -129,6 +130,8 @@ interface MockSession {
   report: TeacherReport | null;
   /** Stored envelopes keyed by client_turn_id (idempotent retries). */
   turns: Record<string, TurnEnvelope>;
+  /** Absent in sessions stored before the snapshot endpoint existed. */
+  created_at?: string;
 }
 
 function loadAll(): Record<string, MockSession> {
@@ -288,6 +291,7 @@ export async function mockStartSession(req: StartSessionRequest): Promise<Sessio
     end_reason: null,
     report: null,
     turns: {},
+    created_at: new Date().toISOString(),
   };
   const all = loadAll();
   all[session.session_id] = session;
@@ -302,6 +306,40 @@ export async function mockStartSession(req: StartSessionRequest): Promise<Sessio
     turns_remaining: 8,
     status: "active",
     active_misconception: null,
+  };
+}
+
+export async function mockGetSession(sessionId: string): Promise<SessionSnapshot> {
+  await delay(300);
+  const session = requireSession(loadAll(), sessionId);
+  const rubric = rubricFor(session.concept_id);
+  const envelopes = Object.values(session.turns).sort(
+    (a, b) => a.turn_number - b.turn_number,
+  );
+  return {
+    session_id: session.session_id,
+    concept: { id: session.concept_id, title: conceptTitle(session.concept_id) },
+    mode: session.mode,
+    opening_text: openingQuestion(session.concept_id, session.mode),
+    turns: envelopes.map((envelope) => ({
+      turn_number: envelope.turn_number,
+      learner_transcript: envelope.learner_transcript,
+      // The mock's stored envelopes don't retain the request's input_mode.
+      input_mode: "text",
+      student_text: envelope.student_text,
+      newly_covered_points: envelope.newly_covered_points,
+    })),
+    progress: { percent: percentFor(session) },
+    active_misconception:
+      session.misconception_posed && !session.misconception_resolved
+        ? rubric.misconception
+        : null,
+    learner_turn_count: session.learner_turn_count,
+    turns_remaining: Math.max(MAX_LEARNER_TURNS - session.learner_turn_count, 0),
+    status: session.status,
+    end_reason: session.end_reason,
+    report: session.report,
+    created_at: session.created_at ?? new Date().toISOString(),
   };
 }
 

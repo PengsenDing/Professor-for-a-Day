@@ -1,4 +1,7 @@
-"""Teaching Session routes (`startSession`, `submitTurn`, `getTurnSpeech`, `finishSession`)."""
+"""Teaching Session routes.
+
+`startSession`, `getSession`, `submitTurn`, `getTurnSpeech`, `finishSession`.
+"""
 
 from typing import Annotated
 
@@ -11,6 +14,7 @@ from ..schemas import (
     ErrorEnvelope,
     SessionCreated,
     SessionFinished,
+    SessionSnapshot,
     StartSessionRequest,
     SubmitTurnRequest,
     TurnEnvelope,
@@ -47,6 +51,20 @@ TurnNumber = Annotated[
 async def start_session(body: StartSessionRequest, orchestrator: OrchestratorDep) -> SessionCreated:
     """Start a Teaching Session."""
     return await orchestrator.start(body)
+
+
+@router.get(
+    "/api/sessions/{session_id}",
+    operation_id="getSession",
+    response_model=SessionSnapshot,
+    responses={
+        404: {"model": ErrorEnvelope},
+        503: {"model": ErrorEnvelope},
+    },
+)
+async def get_session(session_id: SessionId, orchestrator: OrchestratorDep) -> SessionSnapshot:
+    """Read a learner-safe session snapshot (ADR-0004). Never invokes a provider."""
+    return await orchestrator.get_snapshot(session_id)
 
 
 @router.post(

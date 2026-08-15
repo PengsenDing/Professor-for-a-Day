@@ -28,6 +28,8 @@ COMPARED_COMPONENTS = [
     "ActiveMisconception",
     "Progress",
     "TurnEnvelope",
+    "SnapshotTurn",
+    "SessionSnapshot",
     "TeacherReport",
     "SessionFinished",
     "Transcription",

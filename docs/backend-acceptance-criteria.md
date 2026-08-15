@@ -59,15 +59,17 @@ OpenAPI document, the OpenAPI document wins. §3.5 lists the criteria this super
 | --- | --- | --- |
 | `GET` | `/api/curriculum` | Concept catalog + prerequisite edges (no LLM) |
 | `POST` | `/api/sessions` | Start a Teaching Session; returns the opening question (text) |
+| `GET` | `/api/sessions/{session_id}` | Learner-safe session snapshot for resume (no LLM, no mutation; ADR-0004) |
 | `POST` | `/api/sessions/{session_id}/turns` | Submit a learner explanation (JSON text only); returns the turn envelope |
 | `GET` | `/api/sessions/{session_id}/turns/{turn_number}/speech` | Synthesize speech for one AI Student reply on demand (`turn_number` 0 = opening question) |
 | `POST` | `/api/sessions/{session_id}/finish` | End early; returns the Teacher Report (idempotent) |
 | `POST` | `/api/speech/transcriptions` | Audio → transcript; touches nothing else |
 
-There is **no** `GET /api/sessions/{session_id}`: a mid-session browser refresh loses the
-session by design. `/health` remains as specified in the OpenAPI document. The pre-contract
-`/api/chat` and `/api/conversations` routes have been removed from the codebase; nothing in
-this document applies to them.
+`GET /api/sessions/{session_id}` (ADR-0004) returns the learner-safe `SessionSnapshot` so a
+client can restore a session it no longer holds locally; it reversed the earlier decision
+that a browser refresh loses the session by design. `/health` remains as specified in the
+OpenAPI document. The pre-contract `/api/chat` and `/api/conversations` routes have been
+removed from the codebase; nothing in this document applies to them.
 
 ### 3.2 Enumerations
 
@@ -102,8 +104,8 @@ Superseded by the frozen contract (read them through the OpenAPI document):
 - **AC-SES-1, AC-SES-9, AC-TRN-1, AC-TTS-1, AC-TTS-2, AC-TTS-4, AC-TTS-6** — no `speech`
   object in envelopes; the TTS behavior they describe now applies to the speech endpoint
   (synthesis failure = `502 SPEECH_FAILED` there, never blocking session or text flow).
-- **AC-SES-7, AC-SES-10** — `GET /api/sessions/{id}` does not exist; persistence-before-
-  response is asserted through the repository instead.
+- **AC-SES-7, AC-SES-10** — were superseded while `GET /api/sessions/{id}` did not exist;
+  **reinstated by ADR-0004**, which added the endpoint as the learner-safe `SessionSnapshot`.
 - **AC-CFG-4** — the `503` body is the error envelope with code `DB_UNAVAILABLE`, not a
   `detail` object.
 - **AC-STT-1** — the transcript is not user-editable; the flow is voice-native
@@ -203,7 +205,9 @@ Superseded by the frozen contract (read them through the OpenAPI document):
   created and returned `201` with `speech.available = false` and a non-empty `student_text`.
   A speech failure never blocks session creation.
 - **AC-SES-10** — `GET /api/sessions/{session_id}` returns current state without invoking any
-  provider. An unknown or malformed id returns `404`.
+  provider. An unknown or malformed id returns `404`. The response is the learner-safe
+  `SessionSnapshot` (ADR-0004): the persisted Judge evaluation, probe recommendations, and
+  rubric internals never appear.
 
 ### E. Teaching turn orchestration — `AC-TRN`
 

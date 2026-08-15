@@ -1,6 +1,7 @@
 """Fake adapters and repository for the session API tests (AC §5: no live providers)."""
 
 import copy
+from datetime import UTC, datetime
 from typing import Any
 
 from app.services.evaluation import (
@@ -75,6 +76,7 @@ class FakeSessionRepository:
             "turns": [],
             "report": None,
             "final_score": None,
+            "created_at": datetime.now(UTC),
         }
         self.sessions[session_id] = document
         return copy.deepcopy(document)
