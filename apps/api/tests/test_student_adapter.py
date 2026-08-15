@@ -1,12 +1,13 @@
-"""StudentAdapter guardrail tests (AC-STU-2..4, AC-STU-6).
+"""StudentAdapter guardrail tests (AC-STU-2..4, AC-STU-6..10).
 
-Overrides the adapter's `_complete` seam with scripted outputs, so no LangChain
-model or live provider is involved.
+Overrides the adapter's `_complete` seam with scripted outputs and injects a
+scripted critic, so no LangChain model or live provider is involved.
 """
 
 from app.curriculum.rubrics import load_rubrics
 from app.schemas import Mode
-from app.services.student import StudentAdapter, validate_reply
+from app.services.critic import CriterionVerdict, CriticVerdict
+from app.services.student import StudentAdapter, StudentReply, validate_reply
 
 GD = "gradient-descent"
 
@@ -15,10 +16,40 @@ def gd_rubric():
     return load_rubrics()[GD]
 
 
+def clean_verdict(score: float = 0.9) -> CriticVerdict:
+    return CriticVerdict(score=score)
+
+
+def leaky_verdict() -> CriticVerdict:
+    return CriticVerdict(
+        answer_leakage=CriterionVerdict(
+            violated=True, evidence="new parameter equals old minus learning rate times gradient"
+        ),
+        score=0.2,
+    )
+
+
+class ScriptedCritic:
+    """CriticAdapter stand-in with scripted verdicts; records every review."""
+
+    def __init__(self, verdicts: list) -> None:
+        self.verdicts = list(verdicts)
+        self.calls: list[dict] = []
+
+    async def review(self, *, rubric, directive: str, candidate: str) -> CriticVerdict:
+        self.calls.append({"directive": directive, "candidate": candidate})
+        assert self.verdicts, "scripted critic ran out of verdicts"
+        verdict = self.verdicts.pop(0)
+        if isinstance(verdict, Exception):
+            raise verdict
+        return verdict
+
+
 class ScriptedStudent(StudentAdapter):
     """StudentAdapter with a scripted provider seam; records every prompt."""
 
-    def __init__(self, outputs: list) -> None:
+    def __init__(self, outputs: list, critic: ScriptedCritic | None = None) -> None:
+        super().__init__(critic=critic)
         self.outputs = list(outputs)
         self.calls: list[tuple[str, str]] = []
 
@@ -40,7 +71,7 @@ async def reply(
     mode=Mode.confident,
     learner_text="An explanation.",
     pose_trigger=None,
-) -> str:
+) -> StudentReply:
     return await student.reply(
         rubric=gd_rubric(),
         concept_title="Gradient Descent",
@@ -126,7 +157,7 @@ async def test_confident_challenge_demands_assertion_and_falls_back_on_questions
         ["Doesn't it always reach the bottom?", "Why would it ever stop early?"]
     )
 
-    text = await reply(student, pose=misconception)
+    text = (await reply(student, pose=misconception)).text
 
     assert text == misconception.fallback_line
     assert not misconception.fallback_line.rstrip().endswith("?")
@@ -139,7 +170,7 @@ async def test_beginner_pose_may_still_ask_a_question() -> None:
     misconception = gd_rubric().misconceptions[0]
     student = ScriptedStudent(["Doesn't it always reach the very bottom eventually?"])
 
-    text = await reply(student, pose=misconception, mode=Mode.beginner)
+    text = (await reply(student, pose=misconception, mode=Mode.beginner)).text
 
     assert text == "Doesn't it always reach the very bottom eventually?"
     assert len(student.calls) == 1  # no retry: the question form is allowed here
@@ -183,7 +214,7 @@ async def test_conceding_reply_is_retried_then_replaced_by_fallback_line() -> No
         ["You're right, I was wrong about that.", "Oh, I see now — that makes sense now!"]
     )
 
-    text = await reply(student, press=misconception)
+    text = (await reply(student, press=misconception)).text
 
     assert text == misconception.fallback_line
     assert len(student.calls) == 2  # one generation + one named-violation retry
@@ -197,7 +228,7 @@ async def test_valid_retry_output_is_used_instead_of_the_fallback() -> None:
         ["You're right, I was wrong.", "Downhill is downhill — it has to hit the bottom."]
     )
 
-    text = await reply(student, pose=misconception)
+    text = (await reply(student, pose=misconception)).text
 
     assert text == "Downhill is downhill — it has to hit the bottom."
 
@@ -206,7 +237,7 @@ async def test_provider_exception_degrades_to_the_fallback_line() -> None:
     misconception = gd_rubric().misconceptions[0]
     student = ScriptedStudent([RuntimeError("provider down")])
 
-    text = await reply(student, pose=misconception)
+    text = (await reply(student, pose=misconception)).text
 
     assert text == misconception.fallback_line
 
@@ -215,7 +246,7 @@ async def test_probe_turn_falls_back_to_a_preauthored_mode_probe() -> None:
     rubric = gd_rubric()
     student = ScriptedStudent([RuntimeError("provider down")])
 
-    text = await reply(student)
+    text = (await reply(student)).text
 
     assert text in rubric.probes[Mode.confident]
 
@@ -229,3 +260,98 @@ async def test_opening_falls_back_to_the_first_mode_probe() -> None:
     )
 
     assert text == rubric.probes[Mode.beginner][0]
+
+# --- Student Critic (AC-STU-7..10) ---
+
+
+async def test_clean_critic_verdict_is_attached_without_regeneration() -> None:
+    critic = ScriptedCritic([clean_verdict(0.9)])
+    student = ScriptedStudent(["The gradient just points at the answer, plain and simple."], critic)
+
+    result = await reply(student, pose=gd_rubric().misconceptions[1])
+
+    assert result.text == "The gradient just points at the answer, plain and simple."
+    assert result.regenerated is False
+    assert result.critic is not None and result.critic.score == 0.9
+    assert len(critic.calls) == 1
+    assert "Voice this incorrect belief" in critic.calls[0]["directive"]
+
+
+async def test_leak_verdict_triggers_exactly_one_evidence_fed_regeneration() -> None:
+    critic = ScriptedCritic([leaky_verdict()])
+    student = ScriptedStudent(
+        [
+            "So the update is new = old minus learning rate times gradient, and that's that.",
+            "Whatever the exact rule is, my big-steps version has to win the race downhill.",
+        ],
+        critic,
+    )
+
+    result = await reply(student, pose=gd_rubric().misconceptions[0])
+
+    assert result.regenerated is True
+    assert result.text.startswith("Whatever the exact rule is")
+    assert len(critic.calls) == 1  # deliberately no second review of the regeneration
+    regen_task = student.calls[1][1]
+    assert "leaks the correct answer" in regen_task
+    assert "new parameter equals old minus learning rate times gradient" in regen_task
+
+
+async def test_regenerated_reply_failing_code_checks_lands_on_the_fallback() -> None:
+    misconception = gd_rubric().misconceptions[0]
+    critic = ScriptedCritic([leaky_verdict()])
+    student = ScriptedStudent(
+        ["A leaky but code-valid statement about the update rule.", "You're right, I was wrong."],
+        critic,
+    )
+
+    result = await reply(student, press=misconception)
+
+    assert result.text == misconception.fallback_line
+    assert result.regenerated is True
+
+
+async def test_critic_failure_fails_open_to_the_code_validated_reply() -> None:
+    critic = ScriptedCritic([RuntimeError("critic down")])
+    student = ScriptedStudent(["Bigger steps always win the race downhill, obviously."], critic)
+
+    result = await reply(student, pose=gd_rubric().misconceptions[0])
+
+    assert result.text == "Bigger steps always win the race downhill, obviously."
+    assert result.critic is None  # no verdict recorded, reply accepted as-is
+
+
+async def test_no_critic_means_no_reviews_and_no_verdict() -> None:
+    student = ScriptedStudent(["It has to land at the very lowest point eventually."])
+
+    result = await reply(student, pose=gd_rubric().misconceptions[0])
+
+    assert result.critic is None
+    assert result.regenerated is False
+
+
+async def test_fallback_and_farewell_replies_are_never_reviewed() -> None:
+    critic = ScriptedCritic([])  # any review would fail: no scripted verdicts
+    misconception = gd_rubric().misconceptions[0]
+
+    fallback_student = ScriptedStudent([RuntimeError("provider down")], critic)
+    fallback_result = await reply(fallback_student, pose=misconception)
+    assert fallback_result.text == misconception.fallback_line
+
+    farewell_student = ScriptedStudent(["Thanks for everything, teacher!"], critic)
+    farewell_result = await reply(farewell_student, session_ended=True)
+    assert farewell_result.text == "Thanks for everything, teacher!"
+
+    assert critic.calls == []
+
+
+async def test_opening_is_never_reviewed() -> None:
+    critic = ScriptedCritic([])
+    student = ScriptedStudent(["What is a gradient, actually?"], critic)
+
+    text = await student.opening_question(
+        rubric=gd_rubric(), concept_title="Gradient Descent", mode=Mode.beginner
+    )
+
+    assert text == "What is a gradient, actually?"
+    assert critic.calls == []

@@ -2,9 +2,14 @@
 
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# The effort values DeutschlandGPT's OpenAI-compatible endpoint accepts for
+# gpt-5-family models; invalid values are rejected upstream with a 400.
+ReasoningEffort = Literal["none", "low", "medium", "high", "xhigh"]
 
 # Anchored to this file, not the working directory, so `uvicorn app.main:app`
 # finds apps/api/.env no matter where it is launched from.
@@ -49,6 +54,16 @@ class Settings(BaseSettings):
     # only phrases a directive it is handed, so some sampling variety is safe.
     judge_temperature: float = Field(default=0.0, ge=0.0, le=2.0)
     student_temperature: float = Field(default=0.7, ge=0.0, le=2.0)
+
+    # Reasoning depth per role: the Judge weighs cumulative evidence against the
+    # rubric, so it gets room to think; the Student only phrases a directive it is
+    # handed, so shallow reasoning keeps replies fast and cheap.
+    judge_reasoning_effort: ReasoningEffort = "medium"
+    student_reasoning_effort: ReasoningEffort = "low"
+
+    # Kill switch for the Student Critic (the semantic reviewer of AI Student
+    # replies). Off = the pipeline behaves exactly as before the critic existed.
+    student_critic_enabled: bool = True
 
     log_level: str = "INFO"
 

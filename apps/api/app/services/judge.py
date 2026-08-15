@@ -54,8 +54,9 @@ class JudgeAdapter:
     ) -> JudgeEvaluation:
         # The Judge classifies against closed id sets, so it runs cold (temperature 0
         # by default) for consistent verdicts across sessions.
+        settings = get_settings()
         model = get_role_chat_model(
-            resolve_model(), get_settings().judge_temperature
+            resolve_model(), settings.judge_temperature, settings.judge_reasoning_effort
         ).with_structured_output(JudgeEvaluation)
         messages = [
             SystemMessage(content=_SYSTEM_PROMPT),

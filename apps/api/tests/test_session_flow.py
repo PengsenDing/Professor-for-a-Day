@@ -470,3 +470,33 @@ def test_learner_text_injection_does_not_move_progress(harness) -> None:
     # The fake Judge confirmed nothing, so progress must stay at 0 (AC-SEC-6).
     assert envelope["progress"]["percent"] == 0
     assert envelope["status"] == "active"
+
+
+# -- Student Critic persistence (AC-STU-10) ------------------------------------------
+
+
+def test_critic_verdict_is_persisted_on_the_turn_and_absent_from_the_envelope(harness) -> None:
+    from app.services.critic import CriterionVerdict, CriticVerdict
+
+    harness.student.critic_verdict = CriticVerdict(
+        answer_leakage=CriterionVerdict(violated=True, evidence="new = old - lr * gradient"),
+        score=0.4,
+    )
+    harness.student.regenerated = True
+    session = start(harness)
+
+    envelope = submit(harness, session["session_id"]).json()
+
+    turn = harness.repository.sessions[session["session_id"]]["turns"][0]
+    assert turn["critic"]["regenerated"] is True
+    assert turn["critic"]["score"] == 0.4
+    assert any("leaks the correct answer" in item for item in turn["critic"]["violations"])
+    assert "critic" not in envelope  # internal quality trail, never surfaced
+
+
+def test_turn_without_critic_review_stores_a_null_verdict(harness) -> None:
+    session = start(harness)
+    submit(harness, session["session_id"])
+
+    turn = harness.repository.sessions[session["session_id"]]["turns"][0]
+    assert turn["critic"] is None

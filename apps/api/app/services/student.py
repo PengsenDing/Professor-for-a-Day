@@ -14,13 +14,23 @@ failure degrades to a sensible utterance instead of breaking the turn.
 import logging
 
 from langchain_core.messages import HumanMessage, SystemMessage
+from pydantic import BaseModel
 
 from ..config import get_settings
 from ..curriculum.rubrics import Rubric, RubricMisconception
 from ..schemas import Mode
+from .critic import CriticAdapter, CriticVerdict
 from .llm import get_role_chat_model, resolve_model
 
 logger = logging.getLogger(__name__)
+
+
+class StudentReply(BaseModel):
+    """One student turn plus the critic's review of it (persisted, never surfaced)."""
+
+    text: str
+    regenerated: bool = False
+    critic: CriticVerdict | None = None
 
 MAX_REPLY_CHARS = 700
 
@@ -111,6 +121,10 @@ def validate_reply(text: str, *, challenging: bool, must_assert: bool = False) -
 
 
 class StudentAdapter:
+    def __init__(self, critic: CriticAdapter | None = None) -> None:
+        # None = the semantic review stage is disabled (STUDENT_CRITIC_ENABLED=false).
+        self._critic = critic
+
     async def opening_question(self, *, rubric: Rubric, concept_title: str, mode: Mode) -> str:
         task = (
             f"The concept is: {concept_title}.\n"
@@ -119,10 +133,12 @@ class StudentAdapter:
             "to start their explanation."
         )
         # The pre-authored probes are already in-character questions, so the first
-        # one is a safe canned opening if generation fails.
-        return await self._generate(
+        # one is a safe canned opening if generation fails. Openings draw only on
+        # pre-authored probe text, so the critic never reviews them.
+        text, _ = await self._generate(
             mode, task, challenging=False, fallback=rubric.probes[mode][0]
         )
+        return text
 
     async def reply(
         self,
@@ -137,7 +153,7 @@ class StudentAdapter:
         press: RubricMisconception | None,
         session_ended: bool,
         pose_trigger: str | None = None,
-    ) -> str:
+    ) -> StudentReply:
         conversation = "\n".join(f"{speaker}: {text}" for speaker, text in transcript)
         challenge = pose if pose is not None else press
         # The utterance form is decided here, in code, from mode and directive:
@@ -146,6 +162,7 @@ class StudentAdapter:
         must_assert = challenge is not None and not session_ended and mode == Mode.confident
 
         directives: list[str] = []
+        assignment: str | None = None  # the critic-checkable summary of this directive
         if session_ended:
             directives.append(
                 "The session just ended. Thank the teacher briefly and mention one thing "
@@ -162,6 +179,7 @@ class StudentAdapter:
                 f'You currently believe this: "{pose.belief}" It feels right to you '
                 f"because {pose.why_plausible} Do not correct yourself. {form}"
             )
+            assignment = f'Voice this incorrect belief as your own: "{pose.belief}"'
             if pose_trigger:
                 directives.append(
                     "You reached this belief from the teacher's own words — they said: "
@@ -183,6 +201,7 @@ class StudentAdapter:
                 f'You still believe this: "{press.belief}" The teacher has NOT convinced '
                 f"you yet. Do not concede and do not agree. {form}"
             )
+            assignment = f'Keep defending this incorrect belief without conceding: "{press.belief}"'
         else:
             # The probe target is chosen by the orchestrator (a learner-safe point
             # label), never the Judge's free text, so the expected answer cannot
@@ -196,6 +215,7 @@ class StudentAdapter:
                 "a plain 'yes' or 'no'. You may adapt one of these question styles:\n"
                 f"{_render_probes(rubric, mode)}"
             )
+            assignment = f'Ask ONE question probing this aspect without answering it: "{focus}"'
 
         if "?" in learner_text and not session_ended:
             directives.append(
@@ -217,30 +237,105 @@ class StudentAdapter:
             fallback = challenge.fallback_line
         else:
             fallback = _fallback_probe(rubric, mode, transcript)
-        return await self._generate(
+
+        challenging = challenge is not None and not session_ended
+        text, used_fallback = await self._generate(
             mode,
             task,
-            challenging=challenge is not None and not session_ended,
+            challenging=challenging,
+            must_assert=must_assert,
+            fallback=fallback,
+        )
+        # Pre-authored fallbacks and farewells are never reviewed; the critic only
+        # earns its latency on generated pose/press/probe replies (AC-STU-9).
+        if self._critic is None or used_fallback or assignment is None:
+            return StudentReply(text=text)
+        return await self._review_and_maybe_regenerate(
+            rubric=rubric,
+            mode=mode,
+            task=task,
+            text=text,
+            assignment=assignment,
+            challenging=challenging,
             must_assert=must_assert,
             fallback=fallback,
         )
 
+    async def _review_and_maybe_regenerate(
+        self,
+        *,
+        rubric: Rubric,
+        mode: Mode,
+        task: str,
+        text: str,
+        assignment: str,
+        challenging: bool,
+        must_assert: bool,
+        fallback: str,
+    ) -> StudentReply:
+        """Critic review → at most one evidence-fed regeneration → no re-review.
+
+        The critic failing is never worse than not having one: any error after
+        its bounded retry fails open to the code-validated reply (AC-STU-9).
+        """
+        assert self._critic is not None
+        try:
+            verdict = await self._critic.review(
+                rubric=rubric, directive=assignment, candidate=text
+            )
+        except Exception as error:  # noqa: BLE001 - fail-open by design
+            logger.warning(
+                "Student critic unavailable (%s); accepting code-validated reply", error
+            )
+            return StudentReply(text=text)
+
+        problems = verdict.violations()
+        if not problems:
+            return StudentReply(text=text, critic=verdict)
+
+        logger.warning(
+            "Student critic rejected reply (%s); regenerating once", "; ".join(problems)
+        )
+        system = _BASE_PROMPT.format(mode_instruction=_MODE_INSTRUCTIONS[mode])
+        regen_task = (
+            f"{task}\n\n"
+            f"Your previous reply was rejected because: {'; '.join(problems)}.\n"
+            f"Previous reply:\n{text}\n\n"
+            "Produce a corrected reply that carries out your task without these problems."
+        )
+        try:
+            regenerated = await self._complete(system, regen_task)
+        except Exception as error:  # noqa: BLE001 - degraded to the canned line below
+            logger.warning("Student regeneration failed (%s); using fallback line", error)
+            return StudentReply(text=fallback, regenerated=True, critic=verdict)
+
+        # The regenerated reply is accepted after the deterministic checks alone —
+        # deliberately no second critic pass, to bound worst-case turn latency.
+        if validate_reply(regenerated, challenging=challenging, must_assert=must_assert):
+            logger.warning("Regenerated reply failed validation; using fallback line")
+            return StudentReply(text=fallback, regenerated=True, critic=verdict)
+        return StudentReply(text=regenerated.strip(), regenerated=True, critic=verdict)
+
     async def _generate(
         self, mode: Mode, task: str, *, challenging: bool, fallback: str,
         must_assert: bool = False,
-    ) -> str:
-        """Generate → validate → one named-violation retry → pre-authored fallback."""
+    ) -> tuple[str, bool]:
+        """Generate → validate → one named-violation retry → pre-authored fallback.
+
+        Returns (text, used_fallback) so callers can skip critic review of
+        pre-authored lines.
+        """
         system = _BASE_PROMPT.format(mode_instruction=_MODE_INSTRUCTIONS[mode])
 
         try:
             text = await self._complete(system, task)
         except Exception as error:  # noqa: BLE001 - degraded to the canned line below
             logger.warning("AI Student call failed (%s); using fallback line", error)
-            return fallback
+            return fallback, True
 
         violations = validate_reply(text, challenging=challenging, must_assert=must_assert)
         if not violations:
-            return text.strip()
+            return text.strip(), False
 
         logger.warning("AI Student reply rejected (%s); retrying once", "; ".join(violations))
         retry_task = (
@@ -253,16 +348,19 @@ class StudentAdapter:
             retried = await self._complete(system, retry_task)
         except Exception as error:  # noqa: BLE001 - degraded to the canned line below
             logger.warning("AI Student retry failed (%s); using fallback line", error)
-            return fallback
+            return fallback, True
 
         if not validate_reply(retried, challenging=challenging, must_assert=must_assert):
-            return retried.strip()
+            return retried.strip(), False
         logger.warning("AI Student retry still invalid; using pre-authored fallback line")
-        return fallback
+        return fallback, True
 
     async def _complete(self, system: str, task: str) -> str:
         """One provider call; the seam tests override with scripted outputs."""
-        model = get_role_chat_model(resolve_model(), get_settings().student_temperature)
+        settings = get_settings()
+        model = get_role_chat_model(
+            resolve_model(), settings.student_temperature, settings.student_reasoning_effort
+        )
         response = await model.ainvoke(
             [SystemMessage(content=system), HumanMessage(content=task)]
         )
