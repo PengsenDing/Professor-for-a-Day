@@ -604,7 +604,8 @@
 }
 
 /* The bubble follows the greeting clip (state-driven, not hover-driven), so a
-   greeting triggered from the surrounding card shows it too. */
+   greeting triggered from the surrounding card shows it too. The student
+   picker additionally gates it to the hovered/focused card (see .spick). */
 .cva[data-greeting] .cva-bubble {
   animation: cva-bubble-pop 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
 }
@@ -806,6 +807,12 @@
    panel. Same glass language as .sts; reuses the sts-float keyframes. */
 
 .sis .sis-float { animation: sts-float 5s ease-in-out infinite; }
+/* Hold still under the pointer (or keyboard focus, or while the panel is
+   open) so the sphere is easy to aim at. Pausing (not removing) avoids a
+   snap back to rest — same trick as the student picker. */
+.sis:hover .sis-float,
+.sis:focus-within .sis-float,
+.sis[data-open] .sis-float { animation-play-state: paused; }
 
 .sis .sis-btn { transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1); }
 .sis .sis-btn:hover { transform: scale(1.06); }
@@ -849,12 +856,75 @@
 }
 
 /* ---------------------------------------------------------------------------
+   Composer spheres (components/composer-sphere.tsx)
+   Scoped under .csp. The Speak and Send actions rendered as glass spheres in
+   the row under the composer, matching the session insight sphere's glass.
+   Reuses the sts-float keyframes; instances stagger duration/delay inline so
+   the three spheres in the row never bob in unison. */
+
+.csp { --csp-accent: var(--ring); }
+.csp.csp-danger { --csp-accent: var(--destructive); }
+
+.csp .csp-float { animation: sts-float 5s ease-in-out infinite; }
+/* Hold still under the pointer (or keyboard focus) so the action is easy
+   to aim at. Pausing (not removing) avoids a snap back to rest. */
+.csp:hover .csp-float,
+.csp:focus-within .csp-float { animation-play-state: paused; }
+
+.csp .csp-btn { transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.csp .csp-btn:hover:not(:disabled) { transform: scale(1.06); }
+.csp .csp-btn:active:not(:disabled) {
+  transform: scale(0.94);
+  transition-duration: 0.1s;
+}
+.csp .csp-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.csp .csp-shell {
+  border: 1px solid color-mix(in oklab, var(--foreground) 14%, transparent);
+  background:
+    radial-gradient(circle at 32% 26%, color-mix(in oklab, white 90%, transparent) 0%, color-mix(in oklab, white 28%, transparent) 16%, transparent 45%),
+    radial-gradient(circle at 68% 82%, color-mix(in oklab, var(--foreground) 10%, transparent) 0%, transparent 55%),
+    color-mix(in oklab, var(--muted) 40%, transparent);
+  box-shadow:
+    inset 0 -10px 18px -8px color-mix(in oklab, var(--foreground) 26%, transparent),
+    inset 0 8px 14px -7px color-mix(in oklab, white 75%, transparent),
+    0 10px 24px -12px color-mix(in oklab, var(--foreground) 50%, transparent);
+  transition: box-shadow 0.35s ease, border-color 0.3s ease;
+}
+
+/* Hover, keyboard focus and the active state (recording) light the glass
+   with the sphere's accent — the focus ring by default, destructive red
+   while recording (.csp-danger). */
+.csp .csp-btn:hover:not(:disabled) .csp-shell,
+.csp .csp-btn:focus-visible .csp-shell,
+.csp[data-active] .csp-shell {
+  border-color: color-mix(in oklab, var(--csp-accent) 55%, transparent);
+  box-shadow:
+    inset 0 -10px 18px -8px color-mix(in oklab, var(--csp-accent) 30%, transparent),
+    inset 0 8px 14px -7px color-mix(in oklab, white 75%, transparent),
+    0 0 0 4px color-mix(in oklab, var(--csp-accent) 22%, transparent),
+    0 0 34px 6px color-mix(in oklab, var(--csp-accent) 35%, transparent),
+    0 10px 24px -12px color-mix(in oklab, var(--foreground) 45%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .csp .csp-float { animation: none !important; }
+  .csp .csp-btn { transition: none; }
+  .csp .csp-btn:hover,
+  .csp .csp-btn:active { transform: none; }
+}
+
+/* ---------------------------------------------------------------------------
    Student picker grid (used on the home page around StudentVideoPickerAvatar)
-   Scoped under .spick. Three behaviours, all hover-driven:
+   Scoped under .spick. Four behaviours, all hover-driven:
    - each student drifts gently in the air (out of phase per card) and holds
      still while its own card is hovered or focused;
    - a card's description is hidden until that card is hovered/focused
      (always visible on touch devices, which have no hover);
+   - the manga greeting bubble only shows on the card being hovered/focused;
    - while one card is hovered, the other cards blur and recede. */
 
 @keyframes spick-drift {
@@ -896,6 +966,17 @@
 .spick:has(.spick-card:hover) .spick-card:not(:hover) {
   filter: blur(4px);
   opacity: 0.55;
+}
+
+/* The manga greeting bubble is hover-only in the picker: a card that is not
+   under the pointer (or keyboard focus) hides its bubble even while its
+   greeting clip is still finishing — only the student being pointed at
+   "talks". Touch devices keep the state-driven bubble (a tap greets). */
+@media (hover: hover) {
+  .spick .spick-card:not(:hover, :focus-within) .cva-bubble {
+    animation: none;
+    opacity: 0;
+  }
 }
 
 @media (hover: none) {

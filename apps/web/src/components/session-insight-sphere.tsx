@@ -94,27 +94,37 @@ export function SessionInsightSphere({
           </div>
         )}
 
-        {/* Click-open panel: the full cards, unchanged from the old sidebar. */}
+        {/* Click-open state: the rest of the UI blurs away behind a
+            full-screen scrim, and the two cards float above it as one
+            frameless, roomier sheet. Clicking the scrim closes it. */}
         {open && (
-          <div className="absolute bottom-full left-1/2 z-30 mb-3 -translate-x-1/2">
+          <>
             <div
-              role="dialog"
-              aria-label="Points you've demonstrated and current misconception"
-              className="max-h-[min(60vh,26rem)] w-72 overflow-y-auto rounded-2xl border bg-card text-card-foreground shadow-xl animate-in fade-in slide-in-from-bottom-2 duration-300 sm:w-80"
-            >
-              <RubricProgress points={points} />
-              <div className="mx-4 border-t" />
-              <MisconceptionCard
-                misconception={misconception}
-                studentName={studentName}
-              />
+              aria-hidden="true"
+              onPointerDown={() => setOpen(false)}
+              className="fixed inset-0 z-40 bg-background/50 backdrop-blur-md animate-in fade-in duration-300"
+            />
+            <div className="absolute bottom-full left-1/2 z-50 mb-4 -translate-x-1/2">
+              <div
+                role="dialog"
+                aria-label="Points you've demonstrated and current misconception"
+                className="max-h-[min(72vh,36rem)] w-[min(92vw,26rem)] overflow-y-auto rounded-3xl bg-card/70 text-card-foreground shadow-2xl backdrop-blur-xl animate-in fade-in zoom-in-95 slide-in-from-bottom-3 duration-300 sm:w-[30rem]"
+              >
+                <RubricProgress points={points} />
+                <MisconceptionCard
+                  misconception={misconception}
+                  studentName={studentName}
+                />
+              </div>
             </div>
-          </div>
+          </>
         )}
 
         {/* The idle float lives on a wrapper so it never fights the button's
-            own hover/press transform (same trick as the start sphere). */}
-        <span className="sis-float block">
+            own hover/press transform (same trick as the start sphere). The
+            sphere rises above the scrim while open, staying sharp as the
+            panel's anchor. */}
+        <span className={cn("sis-float block", open && "relative z-50")}>
           <button
             ref={buttonRef}
             type="button"

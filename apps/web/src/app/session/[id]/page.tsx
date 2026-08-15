@@ -22,6 +22,7 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Textarea } from "@/components/ui/textarea";
 import { CharacterVideoAvatar } from "@/components/character-video-avatar";
+import { ComposerSphere } from "@/components/composer-sphere";
 import { SessionInsightSphere } from "@/components/session-insight-sphere";
 import type { StudentAvatarState } from "@/components/student-avatar";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -509,30 +510,47 @@ export default function SessionPage() {
             {voiceNote && (
               <p className="mb-2 text-xs text-amber-600">{voiceNote}</p>
             )}
-            <div className="flex items-end gap-2">
-              <Textarea
-                placeholder={
-                  ended
-                    ? "This session has ended."
-                    : `Explain ${session.concept.title} to ${mode.name}…`
+            <Textarea
+              placeholder={
+                ended
+                  ? "This session has ended."
+                  : `Explain ${session.concept.title} to ${mode.name}…`
+              }
+              value={input}
+              maxLength={MAX_LEARNER_TEXT_LENGTH}
+              rows={2}
+              className="max-h-40 resize-none rounded-2xl"
+              disabled={busy || ended}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  sendText();
                 }
-                value={input}
-                maxLength={MAX_LEARNER_TEXT_LENGTH}
-                rows={2}
-                className="max-h-40 resize-none rounded-2xl"
-                disabled={busy || ended}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    sendText();
-                  }
-                }}
-              />
-              <Button
-                size="icon"
-                variant={recording ? "destructive" : "outline"}
-                className="shrink-0 rounded-full"
+              }}
+            />
+            <p className="mt-1 text-right text-[11px] text-muted-foreground">
+              {recording
+                ? "Recording… click the mic again to stop and send"
+                : `${session.turns_remaining} turns left · Enter to send, or click the mic to talk`}
+            </p>
+
+            {/* The three action spheres under the text window: Speak, the
+                session evidence (hover previews the points/misconception
+                titles, click opens the full panel), and Send — one glass
+                language, floating out of phase. */}
+            <div className="mt-2 flex items-center justify-center gap-8 sm:gap-10">
+              <ComposerSphere
+                icon={
+                  recording ? (
+                    <Square className="size-5 animate-pulse sm:size-6" />
+                  ) : (
+                    <Mic className="size-5 sm:size-6" />
+                  )
+                }
+                active={recording}
+                danger={recording}
+                float={{ duration: "5.7s", delay: "-2.3s" }}
                 disabled={busy || ended}
                 aria-label={
                   recording ? "Stop recording and send" : "Start voice input"
@@ -544,42 +562,27 @@ export default function SessionPage() {
                     : "Click to start talking"
                 }
                 onClick={toggleRecording}
-              >
-                {recording ? (
-                  <Square className="size-4 animate-pulse" />
-                ) : (
-                  <Mic className="size-4" />
-                )}
-              </Button>
-              <Button
-                size="icon"
-                className="shrink-0 rounded-full"
+              />
+              <SessionInsightSphere
+                points={session.covered_points}
+                misconception={session.active_misconception}
+                studentName={mode.name}
+              />
+              <ComposerSphere
+                icon={
+                  sending ? (
+                    <Loader2 className="size-5 animate-spin sm:size-6" />
+                  ) : (
+                    <Send className="size-5 sm:size-6" />
+                  )
+                }
+                float={{ duration: "4.6s", delay: "-3.4s" }}
                 disabled={busy || ended || input.trim().length === 0}
-                onClick={sendText}
                 aria-label="Send explanation"
-              >
-                {sending ? (
-                  <Loader2 className="size-4 animate-spin" />
-                ) : (
-                  <Send className="size-4" />
-                )}
-              </Button>
+                title="Send your explanation"
+                onClick={sendText}
+              />
             </div>
-            <p className="mt-1 text-right text-[11px] text-muted-foreground">
-              {recording
-                ? "Recording… click the mic again to stop and send"
-                : `${session.turns_remaining} turns left · Enter to send, or click the mic to talk`}
-            </p>
-
-            {/* Session evidence lives in a floating sphere under the
-                composer: hover previews the section titles, click opens
-                the full points + misconception panel. */}
-            <SessionInsightSphere
-              points={session.covered_points}
-              misconception={session.active_misconception}
-              studentName={mode.name}
-              className="mt-2"
-            />
           </div>
         </section>
       </div>
