@@ -21,11 +21,17 @@
     {
       "id": "ul-mc-1",
       "summary": "Unsupervised learning is just supervised learning where the model figures out the labels on its own.",
+      "belief": "I think unsupervised learning is basically supervised learning where the algorithm is clever enough to work out the labels by itself. The clusters it finds are the real categories, just discovered without us telling it.",
+      "why_plausible": "Clustering output looks exactly like labeled groups, so it feels natural to assume the algorithm recovered the labels a human would have assigned.",
+      "fallback_line": "Unsupervised learning is just supervised learning where the algorithm works out the labels by itself — it looks at the data and figures out each point's real category without being told.",
       "correction": "The learner clarifies that unsupervised learning has a different objective altogether: it finds structure (e.g. similarity groupings) without any notion of a correct label; clusters are not hidden labels being recovered, and the algorithm has no way to know what categories a human would have chosen."
     },
     {
       "id": "ul-mc-2",
       "summary": "The clusters an algorithm finds are the objectively true groups in the data.",
+      "belief": "Since the clustering algorithm follows the math and not human opinion, the groups it finds must be the objectively true structure hidden in the data.",
+      "why_plausible": "The algorithm is deterministic math with no human bias, so its output feels like an objective fact about the data rather than one choice among many.",
+      "fallback_line": "The algorithm is pure math with no human bias, so whatever clusters it finds have to be the real groups that actually exist in the data — that's how I understand it.",
       "correction": "The learner explains that clustering results depend on choices such as the number of clusters, the distance measure, and the features used; different settings yield different groupings, so clusters are one useful lens on the data, not an objective truth."
     }
   ],

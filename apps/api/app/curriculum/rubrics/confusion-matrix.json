@@ -21,11 +21,17 @@
     {
       "id": "cm-mc-1",
       "summary": "High accuracy means the classifier is good, so there's no need to look at the individual cells.",
+      "belief": "If my classifier reaches 99% accuracy, it is clearly performing well, so breaking the results down into individual cells is extra work that won't change the conclusion.",
+      "why_plausible": "Accuracy is the one headline number everyone reports, so a high value looks like the complete story of how good the model is.",
+      "fallback_line": "My classifier is 99% accurate — staring at four little cell counts won't tell me anything the accuracy number doesn't already.",
       "correction": "The learner explains that with imbalanced classes high accuracy can coexist with total failure on the minority class; the confusion matrix reveals this because the false-negative (or false-positive) cell stays large even when overall accuracy is high."
     },
     {
       "id": "cm-mc-2",
       "summary": "A false positive and a false negative are equally bad — an error is an error.",
+      "belief": "A misclassification is a misclassification: a false positive and a false negative each count as exactly one wrong answer, so keeping them in separate cells is just bookkeeping.",
+      "why_plausible": "Both error types subtract exactly one from the number of correct predictions, so mathematically they look completely interchangeable.",
+      "fallback_line": "A wrong prediction is a wrong prediction — whether the mistake was a false positive or a false negative makes no real difference. Change my mind.",
       "correction": "The learner clarifies that the costs of the two error types depend on the application: missing a cancer case (false negative) is far worse than a false alarm, while wrongly blocking a legitimate email (false positive) may be worse than letting one spam through — which is exactly why the matrix keeps them separate."
     }
   ],

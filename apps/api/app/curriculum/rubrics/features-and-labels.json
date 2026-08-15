@@ -21,11 +21,17 @@
     {
       "id": "fl-mc-1",
       "summary": "Features and labels are basically the same thing — both are just columns of data.",
+      "belief": "When I look at a spreadsheet, features and labels are all just columns sitting next to each other, so I figure the distinction is mostly cosmetic — the model treats them all the same.",
+      "why_plausible": "In the raw file the label really is just another column, visually identical to the features, so the difference looks like naming rather than substance.",
+      "fallback_line": "In the spreadsheet they're all just columns of numbers side by side, so the label is really just another column with a fancy name — the model reads them all the same way.",
       "correction": "The learner explains the directional distinction: features are the inputs the model is given, the label is the output it must predict; the same column could be a feature in one task and the label in another, but within one task the roles are distinct."
     },
     {
       "id": "fl-mc-2",
       "summary": "At prediction time the model also needs the label to work.",
+      "belief": "Since the model was trained with both features and labels, I assume it needs both at prediction time too — without the label it would be missing part of its input.",
+      "why_plausible": "The model saw labels for every example during training, so it feels like removing them later would break the pattern it learned.",
+      "fallback_line": "The model always had the label next to the features while it was learning, so it must need both at prediction time too — take the label away and it's missing part of its input.",
       "correction": "The learner clarifies that labels are only required during training (and evaluation); at prediction/inference time the model receives features alone and produces the label as its output — if you already had the label you would not need the model."
     }
   ],

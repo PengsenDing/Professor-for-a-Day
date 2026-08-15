@@ -27,7 +27,7 @@ import {
   mockTranscribeAudio,
 } from "./mock";
 
-const MODE = process.env.NEXT_PUBLIC_API_MODE ?? "mock";
+const MODE = process.env.NEXT_PUBLIC_API_MODE ?? "real";
 export const IS_MOCK = MODE === "mock";
 const BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8787";

@@ -31,16 +31,25 @@
     {
       "id": "gd-mc-1",
       "summary": "Gradient descent always finds the single best possible model, since it keeps improving until it reaches the bottom.",
+      "belief": "Since gradient descent always moves downhill on the loss, it must always end up at the lowest point of the whole loss function.",
+      "why_plausible": "Always moving downhill sounds like it must eventually arrive at the bottom.",
+      "fallback_line": "It always moves downhill, so run it long enough and it has to land at the very lowest point — that's the whole idea.",
       "correction": "The learner explains that on non-convex loss surfaces (like neural networks) gradient descent only converges toward a local minimum or flat region near where it started descending; different initializations can end at different solutions, and there is no general guarantee of reaching the global minimum."
     },
     {
       "id": "gd-mc-2",
       "summary": "The gradient tells the model the direction toward the answer, so following the gradient means moving toward the minimum.",
+      "belief": "The gradient is the signal pointing toward the minimum, so each update should move the parameters in the direction of the gradient to get closer to the answer.",
+      "why_plausible": "The gradient is the quantity everyone says guides training, so it feels natural that following it means heading toward the goal.",
+      "fallback_line": "The gradient is the signal pointing toward the minimum, so each step moves the weights in the direction the gradient points — that's how the model gets closer to the answer.",
       "correction": "The learner clarifies the sign: the gradient points in the direction of steepest ascent (loss increasing fastest), so gradient descent moves against the gradient; moreover it is a local direction based on the slope right here, not a bearing toward the minimum's actual location."
     },
     {
       "id": "gd-mc-3",
       "summary": "Gradient descent computes the answer in one shot, like solving an equation.",
+      "belief": "I picture gradient descent like solving an equation: you compute the gradient, set things up, and it calculates the optimal weights in one go rather than creeping toward them.",
+      "why_plausible": "In calculus class you minimize a function by setting the derivative to zero and solving directly, so it seems like training should just solve for the answer the same way.",
+      "fallback_line": "It's just like calculus class: you set the derivative to zero and solve, so gradient descent computes the optimal weights in one shot rather than creeping toward them.",
       "correction": "The learner explains that gradient descent is inherently iterative: each step uses only local slope information to make a small improvement, and many steps are needed; this is exactly why it works on huge models where solving for the optimum directly is impossible."
     }
   ],

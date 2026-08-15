@@ -21,11 +21,17 @@
     {
       "id": "of-mc-1",
       "summary": "The better a model scores on its training data, the better it will be in the real world.",
+      "belief": "If the model gets 100% accuracy on the training data, it has learned the task perfectly, so it must be the best possible model.",
+      "why_plausible": "Accuracy is the score we optimize for, so a perfect score reads like a perfect model.",
+      "fallback_line": "It scored 100% on the training data — a model that gets everything right is as good as it gets, in my book.",
       "correction": "The learner explains that training performance alone is misleading because the model may have memorized the training set; real-world quality is estimated on data the model never trained on, and chasing training accuracy past a point actively hurts generalization."
     },
     {
       "id": "of-mc-2",
       "summary": "Overfitting only happens with huge neural networks, so small models are safe.",
+      "belief": "Overfitting is really a problem for giant deep networks with millions of parameters. My model is small and simple, so it can't overfit and I don't need to worry about it.",
+      "why_plausible": "Every famous overfitting story involves a massive network memorizing its data, so raw model size feels like the whole cause.",
+      "fallback_line": "My model only has a handful of parameters, nothing like those giant neural networks — something that small simply can't overfit, so I don't worry about it.",
       "correction": "The learner clarifies that overfitting is about the balance between model flexibility and data: even a small model (e.g. a high-degree polynomial on ten points, or a deep decision tree on little data) overfits when its capacity is large relative to the available data."
     }
   ],

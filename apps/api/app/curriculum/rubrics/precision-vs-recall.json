@@ -21,11 +21,17 @@
     {
       "id": "pr-mc-1",
       "summary": "Precision and recall are two formulas for the same idea, so a model good at one is automatically good at the other.",
+      "belief": "Precision and recall both measure how well the model handles the positive class, just written with slightly different formulas, so if my precision is high my recall must be high too.",
+      "why_plausible": "Both formulas have the same true positives in the numerator and both improve as the model gets better, so they read like two views of one underlying score.",
+      "fallback_line": "Precision and recall are both built from the same true positives, so if my precision is high, my recall pretty much has to be high too.",
       "correction": "The learner explains that the two metrics divide the true positives by different denominators (all predicted positives vs all actual positives), penalize different errors (FP vs FN), and typically move in opposite directions as the decision threshold shifts — a model can have high precision with terrible recall (predicting positive only when certain) and vice versa (predicting positive for everyone)."
     },
     {
       "id": "pr-mc-2",
       "summary": "You should always maximize both to 100% — any decent model achieves perfect precision and perfect recall.",
+      "belief": "A properly built model should reach 100% precision and 100% recall together; if either number is below perfect, that just means the model hasn't been trained well enough yet.",
+      "why_plausible": "Every metric seems to climb with more training and tuning, so perfection on both feels like a matter of effort rather than a fundamental limit.",
+      "fallback_line": "A genuinely good model should push both precision and recall to 100% — if either one is stuck below perfect, we simply haven't trained it enough yet.",
       "correction": "The learner clarifies that with noisy, overlapping real-world data perfect scores on both are unattainable, so practitioners choose an operating point on the trade-off curve based on which error is costlier, or balance them with a summary like the F1 score."
     }
   ],

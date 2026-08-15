@@ -30,3 +30,16 @@ def get_chat_model(model: str) -> BaseChatModel:
         temperature=settings.llm_temperature,
         timeout=settings.llm_timeout_seconds,
     )
+
+
+@lru_cache
+def get_role_chat_model(model: str, temperature: float) -> BaseChatModel:
+    """A chat model with a role-specific temperature (Judge cold, AI Student warm)."""
+    settings = get_settings()
+    return ChatOpenAI(
+        model=model,
+        api_key=settings.deutschlandgpt_api_key,
+        base_url=settings.deutschlandgpt_base_url,
+        temperature=temperature,
+        timeout=settings.llm_timeout_seconds,
+    )

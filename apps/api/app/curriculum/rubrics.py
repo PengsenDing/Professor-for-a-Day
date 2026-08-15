@@ -25,6 +25,18 @@ class RubricPoint(BaseModel):
 class RubricMisconception(BaseModel):
     id: str = Field(min_length=1)
     summary: str = Field(min_length=1, description="Learner-safe statement of the mix-up.")
+    belief: str = Field(
+        min_length=1,
+        description="Internal; the wrong belief in the student's own voice, for posing.",
+    )
+    why_plausible: str = Field(
+        min_length=1,
+        description="Internal; why the belief feels convincing, so phrasing stays believable.",
+    )
+    fallback_line: str = Field(
+        min_length=1,
+        description="Pre-authored in-character utterance used when generation fails.",
+    )
     correction: str = Field(min_length=1, description="Internal; what the Judge listens for.")
 
 

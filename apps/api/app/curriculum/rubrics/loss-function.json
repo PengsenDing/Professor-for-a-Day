@@ -31,16 +31,25 @@
     {
       "id": "lf-mc-1",
       "summary": "The loss function is the same thing as accuracy — they are just two words for the model's score.",
+      "belief": "I take loss and accuracy to be two names for the same score of how well the model is doing — loss counts it as wrongness and accuracy counts it as rightness, but it's one measurement.",
+      "why_plausible": "Both numbers move together in most training curves and both describe how good the model is, so they look like the same quantity expressed two ways.",
+      "fallback_line": "Loss going down and accuracy going up are the same score flipped around — two words for one measurement — so we might as well train the model to maximize accuracy directly.",
       "correction": "The learner explains that accuracy only counts right vs wrong and changes in jumps, giving no smooth signal to learn from, while a loss like cross-entropy varies continuously with the model's confidence; that is why training minimizes a loss rather than directly maximizing accuracy, and why the two can move differently."
     },
     {
       "id": "lf-mc-2",
       "summary": "There is one universal loss function that every model uses.",
+      "belief": "I assume there's one standard loss formula that all models share — an error is just the gap between prediction and truth, so mean squared error should work for any task, including classification.",
+      "why_plausible": "Every loss ultimately measures prediction error, so it seems like one general-purpose formula for 'how far off you were' should cover every problem.",
+      "fallback_line": "An error is just the gap between the prediction and the truth, so one formula like squared error should work for every kind of model, classification included — that's the whole point of it.",
       "correction": "The learner clarifies that the loss is a design choice matched to the task and goals: regression commonly uses squared error, classification commonly uses cross-entropy, and the choice changes what errors the model cares about (e.g. squared error punishes large errors disproportionately), so choosing the loss is part of defining the problem."
     },
     {
       "id": "lf-mc-3",
       "summary": "If the training loss reaches (near) zero, the model is finished and will perform perfectly in the real world.",
+      "belief": "If my training loss gets to nearly zero, the model has learned the problem completely, so it should perform just as well on any new data it sees.",
+      "why_plausible": "Zero loss literally means zero error on everything the model was graded on, which sounds like the definition of having fully learned the task.",
+      "fallback_line": "My training loss is basically zero, so the model makes no mistakes anymore — it's done learning and it'll work just as well on any new data it sees.",
       "correction": "The learner explains that near-zero training loss only means the model fits the training examples, which may indicate memorization/overfitting; what matters is the loss or metric on held-out data, and a gap between low training loss and high validation loss is a warning sign, not a success."
     }
   ],

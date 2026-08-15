@@ -5,6 +5,7 @@ from uuid import uuid4
 import pytest
 
 from app.curriculum.rubrics import load_rubrics
+from app.services.orchestrator import MASTERY_CLOSING_LINE
 from tests.fakes import make_evaluation
 
 GD = "gradient-descent"
@@ -147,10 +148,46 @@ def test_student_receives_probe_and_misconception_directives(harness) -> None:
     submit(harness, session["session_id"])
 
     reply_call = harness.student.reply_calls[0]
-    assert reply_call["recommended_probe"]  # AC-TRN-4
+    assert reply_call["probe_focus"]  # AC-TRN-4: an orchestrator-selected target
     assert reply_call["pose"] is not None  # first turn poses a misconception
     envelope = submit(harness, session["session_id"]).json()
     assert envelope["active_misconception"] is not None  # AC-TRN-12
+
+
+def test_probe_focus_is_an_uncovered_point_label_not_judge_free_text(harness) -> None:
+    """The Judge's free-text probe recommendation is persisted but never forwarded;
+    the Student's probe target is the first uncovered point's learner-safe label."""
+    rubric = gd_rubric()
+    session = start(harness)
+    harness.judge.queue(make_evaluation(points=[rubric.points[0].id]))
+    submit(harness, session["session_id"])
+
+    reply_call = harness.student.reply_calls[0]
+    assert reply_call["probe_focus"] == rubric.points[1].label  # first uncovered point
+    # The fake Judge's free text ("Probe the next idea.") is not what the Student gets.
+    assert reply_call["probe_focus"] != "Probe the next idea."
+
+
+def test_unresolved_misconception_is_pressed_until_the_judge_resolves_it(harness) -> None:
+    """The Student is re-armed with the outstanding challenge every turn; whether it
+    stays stubborn is orchestrator state, never the model's conversational memory."""
+    session = start(harness)
+    submit(harness, session["session_id"])  # turn 1: poses the first misconception
+    submit(harness, session["session_id"])  # turn 2: fake Judge resolves nothing
+
+    first_call, second_call = harness.student.reply_calls
+    assert first_call["pose"] is not None
+    assert first_call["press"] is None
+    assert second_call["pose"] is None
+    assert second_call["press"] is not None
+    assert second_call["press"].id == first_call["pose"].id
+
+    # Once the Judge resolves it, the press directive stops.
+    harness.judge.queue(make_evaluation(corrected=[first_call["pose"].id]))
+    submit(harness, session["session_id"])
+    third_call = harness.student.reply_calls[2]
+    assert third_call["pose"] is None
+    assert third_call["press"] is None
 
 
 # -- progress and envelope --------------------------------------------------------
@@ -231,6 +268,24 @@ def test_mastery_ends_in_the_same_envelope(harness) -> None:
     report = final["report"]
     assert report["mastery_achieved"] is True
     assert report["final_percent"] == 100
+
+
+def test_mastery_closing_is_scripted_without_a_student_call(harness) -> None:
+    """At genuine 100% the concession is canned: no generation at the moment of victory."""
+    rubric = gd_rubric()
+    session = start(harness)
+
+    harness.judge.queue(make_evaluation(points=[point.id for point in rubric.points]))
+    submit(harness, session["session_id"])
+    posed_id = harness.student.reply_calls[0]["pose"].id
+    student_calls_before = len(harness.student.reply_calls)
+
+    harness.judge.queue(make_evaluation(corrected=[posed_id]))
+    final = submit(harness, session["session_id"]).json()
+
+    assert final["end_reason"] == "mastery"
+    assert final["student_text"] == MASTERY_CLOSING_LINE
+    assert len(harness.student.reply_calls) == student_calls_before
 
 
 # -- T11/T13: finish and report ----------------------------------------------------

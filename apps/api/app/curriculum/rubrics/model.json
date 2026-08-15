@@ -21,11 +21,17 @@
     {
       "id": "mdl-mc-1",
       "summary": "A model is a database that looks up the answer it saw during training.",
+      "belief": "I picture a trained model as a big organized store of its training examples: when a new input arrives, it searches for the closest example it saw and returns that stored answer.",
+      "why_plausible": "Training on data and then answering questions about similar data sounds exactly like saving records and querying them later.",
+      "fallback_line": "When the model answers, it's just finding the training example that looks most like my input and reading off the answer it stored for it — that's how I understand it.",
       "correction": "The learner explains that a model generalizes rather than looks up: it compresses training data into parameters and can produce predictions for inputs it has never seen, unlike a lookup table which only returns stored entries."
     },
     {
       "id": "mdl-mc-2",
       "summary": "Once a model is trained, its predictions are objective facts.",
+      "belief": "Once training is finished, I take the model's predictions as objective facts — it computed them mathematically from real data, so there's no opinion involved.",
+      "why_plausible": "The output comes from a precise mathematical procedure applied to real measurements, which feels like the definition of objectivity.",
+      "fallback_line": "The prediction comes straight out of math applied to real data — no human opinion anywhere — so whatever the model says is simply a fact. Change my mind.",
       "correction": "The learner clarifies that model outputs are estimates shaped by the training data and modeling choices; they carry uncertainty and inherit any biases or gaps in the data, so they should not be treated as guaranteed truth."
     }
   ],

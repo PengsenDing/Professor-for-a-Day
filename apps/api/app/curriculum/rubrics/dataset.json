@@ -21,11 +21,17 @@
     {
       "id": "ds-mc-1",
       "summary": "More data is always better, so any extra rows automatically improve the model.",
+      "belief": "I think the size of the dataset is what really matters. Every extra row gives the model more to learn from, so adding data can only make it better.",
+      "why_plausible": "Bigger samples usually mean better statistics, so 'more rows, better model' feels like a safe general rule.",
+      "fallback_line": "Every extra row gives the model more to learn from, so I should just grab every row I can find and dump it all in — more data can only make it better.",
       "correction": "The learner explains that data quality and representativeness matter as much as quantity: adding mislabeled, duplicated, or unrepresentative rows can hurt the model, so extra data only helps when it is relevant and correctly reflects the target population."
     },
     {
       "id": "ds-mc-2",
       "summary": "A dataset is just whatever the model outputs after it has been trained.",
+      "belief": "As far as I understand, the dataset is what the model produces once training is done — all its predictions collected together are the dataset.",
+      "why_plausible": "The model clearly generates lots of data when you use it, so calling that pile of outputs 'the dataset' seems like a natural reading of the word.",
+      "fallback_line": "The dataset is basically everything the model spits out after training — all its predictions collected together. That's where all that data comes from.",
       "correction": "The learner clarifies that the dataset is the input to training, collected before or independently of the model; the model's outputs are predictions, not the dataset itself."
     }
   ],
