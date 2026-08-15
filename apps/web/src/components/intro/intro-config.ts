@@ -125,6 +125,20 @@ export const ZOOM = {
   revealDurationMs: 600,
 } as const;
 
+/**
+ * The ambient scholarly backdrop: faint gray formulas, equations, and
+ * classic quotes drifting behind the title (floating-symbols.tsx). The
+ * per-item table (text, font voice, position, size, drift) lives with the
+ * component; only the layer-wide timing is tuned here.
+ */
+export const AMBIENT = {
+  /** Fade-in of the whole layer after the overlay mounts. */
+  fadeInMs: 2200,
+  fadeInDelayMs: 400,
+  /** Global multiplier on every item's font size (one tuning knob). */
+  sizeScale: 1.5,
+} as const;
+
 export const UI = {
   /** Hint shown once the title is written; the whole screen is the target. */
   clickHintLabel: "Click anywhere to begin",

@@ -49,6 +49,104 @@
   opacity: 0;
 }
 
+/* ---------- Ambient scholarly backdrop ---------- */
+
+/* Faint gray formulas and classic quotes drifting behind the title
+   (floating-symbols.tsx). Sits under the Player stage; the Player canvas
+   is transparent inside the overlay so the layer shows through everywhere,
+   not only in the letterbox bars. Ink follows --intro-ink for dark mode. */
+.ambientLayer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  user-select: none;
+  animation: ambient-fade-in var(--ambient-fade-duration, 2200ms) ease-out
+    var(--ambient-fade-delay, 400ms) both;
+}
+
+@keyframes ambient-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* On exit the backdrop dissolves mid-fly-through; the ambient layer is
+   part of the backdrop, so it dissolves on the same clock. */
+.overlayZooming .ambientLayer {
+  animation: none;
+  opacity: 0;
+  transition: opacity var(--reveal-duration, 600ms) ease-out
+    var(--reveal-delay, 1100ms);
+}
+
+.ambientItem {
+  position: absolute;
+  left: var(--x, 50%);
+  top: var(--y, 50%);
+  color: rgba(var(--intro-ink), var(--o, 0.12));
+  line-height: 1.5;
+  white-space: nowrap;
+  /* Static fallback when the drift animation is off (reduced motion). */
+  transform: rotate(var(--rot, 0deg));
+  will-change: transform;
+  animation: ambient-drift var(--dur, 24s) ease-in-out var(--delay, 0s)
+    infinite alternate;
+}
+
+/* Right-anchored items measure --x from the right edge, so text near the
+   edge never clips mid-word on narrow viewports. */
+.ambientRight {
+  left: auto;
+  right: var(--x, 50%);
+}
+
+/* Long quotes wrap into a small block; formulas stay on one line. */
+.ambientWraps {
+  white-space: normal;
+}
+
+@keyframes ambient-drift {
+  from {
+    transform: translate3d(0, var(--drift, 14px), 0) rotate(var(--rot, 0deg));
+  }
+  to {
+    transform: translate3d(0, calc(-1 * var(--drift, 14px)), 0)
+      rotate(var(--rot, 0deg));
+  }
+}
+
+/* Font voices: chalk-serif formulas, blackboard monospace, italic quotes,
+   airy sans — different hands on the same faculty blackboard. */
+.ambientSerif {
+  font-family: Georgia, "Times New Roman", serif;
+}
+
+.ambientMono {
+  font-family: "SF Mono", Menlo, Consolas, "Courier New", monospace;
+}
+
+.ambientQuote {
+  font-family: Baskerville, "Palatino Linotype", Palatino, Georgia, serif;
+  font-style: italic;
+}
+
+.ambientSans {
+  font-family: "Helvetica Neue", "Segoe UI", Arial, sans-serif;
+  font-weight: 300;
+  letter-spacing: 0.05em;
+}
+
+/* Thin the layer out on small screens so it stays a whisper. */
+@media (max-width: 768px) {
+  .ambientMobileHidden {
+    display: none;
+  }
+}
+
 /* ---------- Title zoom transition ---------- */
 
 .zoomLayer {
@@ -234,6 +332,12 @@
 @media (prefers-reduced-motion: reduce) {
   .clickAnywhere {
     transition: none;
+  }
+
+  /* Symbols appear instantly and hold still; the base rotate() remains. */
+  .ambientLayer,
+  .ambientItem {
+    animation: none;
   }
 
   .clickHint {

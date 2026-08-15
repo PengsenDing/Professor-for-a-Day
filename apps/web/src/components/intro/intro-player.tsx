@@ -9,6 +9,10 @@ import {
 } from "./handwriting-path";
 import { COMPOSITION } from "./intro-config";
 
+// The overlay paints the backdrop itself (plus the ambient symbol layer
+// beneath the Player), so the canvas must not cover it.
+const INPUT_PROPS = { transparentBackground: true } as const;
+
 type IntroPlayerProps = {
   /** Show the finished title as a still image instead of animating. */
   reducedMotion: boolean;
@@ -80,8 +84,9 @@ export const IntroPlayer = ({
     }
   }, [breathing, reducedMotion]);
 
-  // "Contain" scaling: the full 16:9 canvas is always visible; the overlay
-  // background is the same black, so letterboxing is invisible.
+  // "Contain" scaling: the full 16:9 canvas is always visible; the canvas
+  // is transparent over the overlay's own backdrop, so letterboxing is
+  // invisible and the ambient symbols show through everywhere.
   const containScale = Math.min(
     viewport.width / COMPOSITION.width,
     viewport.height / COMPOSITION.height,
@@ -102,6 +107,7 @@ export const IntroPlayer = ({
     <Player
       ref={playerRef}
       component={TitleAnimation}
+      inputProps={INPUT_PROPS}
       durationInFrames={INTRO_DURATION_FRAMES}
       compositionWidth={COMPOSITION.width}
       compositionHeight={COMPOSITION.height}

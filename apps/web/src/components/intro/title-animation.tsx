@@ -18,7 +18,18 @@ export const INTRO_DURATION_FRAMES =
  * logic lives in handwriting-path.ts; this component only maps the current
  * frame to the title state and adds a subtle idle shimmer of the sheen.
  */
-export const TitleAnimation: React.FC = () => {
+type TitleAnimationProps = {
+  /**
+   * Inside the intro overlay the canvas stays transparent so the ambient
+   * backdrop (floating formulas and quotes) shows through; standalone
+   * renders (Remotion Studio) keep painting their own background.
+   */
+  transparentBackground?: boolean;
+};
+
+export const TitleAnimation: React.FC<TitleAnimationProps> = ({
+  transparentBackground = false,
+}) => {
   const frame = useCurrentFrame();
 
   // Idle shimmer after the writing is done: a sine with exactly one cycle
@@ -37,7 +48,11 @@ export const TitleAnimation: React.FC = () => {
     <AbsoluteFill
       // Theme-aware: --intro-bg cascades from the overlay (intro.module.css);
       // the config color remains the fallback outside the overlay (Studio).
-      style={{ backgroundColor: `var(--intro-bg, ${COLORS.background})` }}
+      style={{
+        backgroundColor: transparentBackground
+          ? undefined
+          : `var(--intro-bg, ${COLORS.background})`,
+      }}
     >
       {/* Flat background: any shading here would seam against the
           overlay's letterbox areas outside the 16:9 canvas. */}

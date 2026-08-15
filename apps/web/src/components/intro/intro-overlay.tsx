@@ -10,6 +10,7 @@ import {
 import dynamic from "next/dynamic";
 import { UI, ZOOM } from "./intro-config";
 import { ClickAnywhere } from "./click-anywhere";
+import { FloatingSymbols } from "./floating-symbols";
 import { TitleZoomTransition } from "./title-zoom-transition";
 import styles from "./intro.module.css";
 
@@ -110,6 +111,10 @@ export const IntroOverlay = () => {
       role="dialog"
       aria-label="Intro"
     >
+      {/* Ambient formulas/quotes drift beneath the Player stage; the
+          Player canvas is transparent so they show through everywhere. */}
+      <FloatingSymbols />
+
       {/* The Player is swapped out for the zoom clone in the same commit,
           so the title never doubles or flickers. */}
       <div className={`${styles.stage} ${zooming ? styles.stageHidden : ""}`}>
