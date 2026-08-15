@@ -9,6 +9,7 @@ import {
   useState,
   type RefObject,
 } from "react";
+import { createPortal } from "react-dom";
 import * as THREE from "three";
 import {
   Canvas,
@@ -64,7 +65,45 @@ const TITLE_PLANE = NODE_RADIUS * 1.78;
 /** Pixel resolution of each title texture (square). */
 const TITLE_TEXTURE_SIZE = 256;
 
+/**
+ * Ball-bump physics (the snooker feel): a sphere pushed by the dragged one
+ * picks up velocity along the contact normal, glides, can knock into further
+ * spheres, and eases to rest under felt-like damping. Nothing springs back.
+ */
+const BUMP_KICK = 30; // velocity gained per world unit of drag-induced overlap
+const BUMP_DAMPING = 2.8; // exponential slow-down, like felt friction
+const BUMP_RESTITUTION = 0.55; // energy kept in ball-on-ball collisions
+const BUMP_MAX_SPEED = 14; // world units/second
+const BUMP_STOP_SPEED = 0.08; // below this a ball is considered at rest
+const THROW_SCALE = 0.35; // fraction of pointer velocity kept on release
+const THROW_MAX_SPEED = 9;
+
 type Vec3 = [number, number, number];
+
+const VEC3_ZERO: Vec3 = [0, 0, 0];
+
+/** Add a velocity kick to one ball, clamping the result to BUMP_MAX_SPEED. */
+function addKick(
+  vel: Record<string, Vec3>,
+  id: string,
+  kx: number,
+  ky: number,
+  kz: number,
+) {
+  const v = vel[id] ?? VEC3_ZERO;
+  const x = v[0] + kx;
+  const y = v[1] + ky;
+  const z = v[2] + kz;
+  const len = Math.hypot(x, y, z);
+  const k = len > BUMP_MAX_SPEED ? BUMP_MAX_SPEED / len : 1;
+  vel[id] = [x * k, y * k, z * k];
+}
+
+/** Drives the ball-bump physics from the render loop. */
+function PhysicsTicker({ step }: { step: (dt: number) => void }) {
+  useFrame((_, dt) => step(dt));
+  return null;
+}
 
 /**
  * Group concepts into prerequisite layers (top = no prerequisites), ordering
@@ -744,8 +783,9 @@ function Edges3D({
  * Mastery per node.
  *
  * Interactions: orbit (drag background), pan (right-drag / two fingers),
- * zoom (wheel / pinch), drag a sphere to move it in 3D (neighbors yield,
- * edges follow, nothing snaps back), click a sphere to select the concept.
+ * zoom (wheel / pinch), drag a sphere to move it in 3D (bumped spheres pick
+ * up momentum and glide apart like snooker balls, edges follow, nothing
+ * snaps back), click a sphere to select the concept.
  */
 export function KnowledgeGraph3D({
   curriculum,
@@ -766,12 +806,30 @@ export function KnowledgeGraph3D({
   const [positions, setPositions] = useState<Record<string, Vec3>>(() =>
     Object.fromEntries(layout.positions),
   );
+  // Mutable mirror of the positions: the physics tick and the drag handler
+  // both work on this map, then publish a snapshot into React state.
+  const positionsRef = useRef<Record<string, Vec3>>(
+    Object.fromEntries(layout.positions),
+  );
+  /** Per-ball velocity in world units/second; absent key = at rest. */
+  const velocitiesRef = useRef<Record<string, Vec3>>({});
+  const draggingRef = useRef<string | null>(null);
+  /** Smoothed pointer velocity of the ball being dragged. */
+  const dragVelRef = useRef<Vec3>([0, 0, 0]);
+  const lastDragSampleRef = useRef<{ t: number; pos: Vec3 } | null>(null);
+
   // Re-seed the live positions if the curriculum (and thus the layout) changes.
   const [seededLayout, setSeededLayout] = useState(layout);
   if (layout !== seededLayout) {
     setSeededLayout(layout);
     setPositions(Object.fromEntries(layout.positions));
   }
+  // Refs can't be reseeded during render; syncing them in an effect is fine —
+  // physics only runs from events and frames, which happen after effects.
+  useEffect(() => {
+    positionsRef.current = Object.fromEntries(layout.positions);
+    velocitiesRef.current = {};
+  }, [layout]);
 
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
@@ -811,10 +869,33 @@ export function KnowledgeGraph3D({
 
   const beginDrag = useCallback((id: string) => {
     setDraggingId(id);
+    draggingRef.current = id;
+    dragVelRef.current = [0, 0, 0];
+    lastDragSampleRef.current = null;
+    delete velocitiesRef.current[id];
     if (controlsRef.current) controlsRef.current.enabled = false;
   }, []);
 
   const endDrag = useCallback(() => {
+    const id = draggingRef.current;
+    if (id) {
+      // Release with a fraction of the pointer's momentum: a quick flick
+      // lets the ball glide briefly (and knock into others) before resting.
+      const dv = dragVelRef.current;
+      let x = dv[0] * THROW_SCALE;
+      let y = dv[1] * THROW_SCALE;
+      let z = dv[2] * THROW_SCALE;
+      const len = Math.hypot(x, y, z);
+      if (len > THROW_MAX_SPEED) {
+        const k = THROW_MAX_SPEED / len;
+        x *= k;
+        y *= k;
+        z *= k;
+      }
+      if (len > BUMP_STOP_SPEED) velocitiesRef.current[id] = [x, y, z];
+    }
+    draggingRef.current = null;
+    dragVelRef.current = [0, 0, 0];
     setDraggingId(null);
     if (controlsRef.current) controlsRef.current.enabled = true;
   }, []);
@@ -823,131 +904,259 @@ export function KnowledgeGraph3D({
    * Move the dragged sphere and let the web react: every other sphere
    * follows a fraction of the drag — direct prerequisites/dependents
    * noticeably more than the rest — so the network feels connected instead
-   * of rigid. Any sphere the dragged one presses into is still pushed out to
-   * the minimum separation, so overlaps never appear. Dropped spheres stay
-   * put.
+   * of rigid. Any sphere the dragged one presses into is pushed out to the
+   * minimum separation AND picks up a momentum kick along the contact
+   * normal, so it keeps gliding for a moment like a struck snooker ball
+   * (the glide itself lives in stepPhysics). Dropped spheres stay put.
    */
   const NEIGHBOR_FOLLOW = 0.26; // connected spheres: follow strongly
   const OTHERS_FOLLOW = 0.07; // the rest of the web: subtle sympathy motion
   const moveNode = useCallback(
     (id: string, next: Vec3) => {
-      setPositions((prev) => {
-        const from = prev[id];
-        const dx = from ? next[0] - from[0] : 0;
-        const dy = from ? next[1] - from[1] : 0;
-        const dz = from ? next[2] - from[2] : 0;
-        const neighbors = adjacency.get(id);
-        const map: Record<string, Vec3> = {};
-        for (const [nid, p] of Object.entries(prev)) {
-          if (nid === id) continue;
-          const w = neighbors?.has(nid) ? NEIGHBOR_FOLLOW : OTHERS_FOLLOW;
-          map[nid] = [p[0] + dx * w, p[1] + dy * w, p[2] + dz * w];
-        }
-        map[id] = next;
-        const ids = Object.keys(map);
-        for (let pass = 0; pass < 2; pass++) {
-          for (let i = 0; i < ids.length; i++) {
-            for (let j = i + 1; j < ids.length; j++) {
-              const a = map[ids[i]];
-              const b = map[ids[j]];
-              const dx = b[0] - a[0];
-              const dy = b[1] - a[1];
-              const dz = b[2] - a[2];
-              const dist = Math.max(0.001, Math.hypot(dx, dy, dz));
-              if (dist >= MIN_SEPARATION) continue;
-              const overlap = MIN_SEPARATION - dist;
-              const aLocked = ids[i] === id;
-              const bLocked = ids[j] === id;
-              const aShare = aLocked ? 0 : bLocked ? 1 : 0.5;
-              const ux = dx / dist;
-              const uy = dy / dist;
-              const uz = dz / dist;
-              map[ids[i]] = [
-                a[0] - ux * overlap * aShare,
-                a[1] - uy * overlap * aShare,
-                a[2] - uz * overlap * aShare,
-              ];
-              map[ids[j]] = [
-                b[0] + ux * overlap * (1 - aShare),
-                b[1] + uy * overlap * (1 - aShare),
-                b[2] + uz * overlap * (1 - aShare),
-              ];
+      const map = positionsRef.current;
+      const vel = velocitiesRef.current;
+      const from = map[id];
+
+      // Smoothed pointer velocity, for collision transfer + release glide.
+      const now = performance.now();
+      const last = lastDragSampleRef.current;
+      if (last && now - last.t > 2) {
+        const dt = Math.min(0.1, (now - last.t) / 1000);
+        const blend = 0.4;
+        const dv = dragVelRef.current;
+        dragVelRef.current = [
+          dv[0] + ((next[0] - last.pos[0]) / dt - dv[0]) * blend,
+          dv[1] + ((next[1] - last.pos[1]) / dt - dv[1]) * blend,
+          dv[2] + ((next[2] - last.pos[2]) / dt - dv[2]) * blend,
+        ];
+      }
+      lastDragSampleRef.current = { t: now, pos: next };
+
+      const dx = from ? next[0] - from[0] : 0;
+      const dy = from ? next[1] - from[1] : 0;
+      const dz = from ? next[2] - from[2] : 0;
+      const neighbors = adjacency.get(id);
+      for (const nid of Object.keys(map)) {
+        if (nid === id) continue;
+        const w = neighbors?.has(nid) ? NEIGHBOR_FOLLOW : OTHERS_FOLLOW;
+        const p = map[nid];
+        map[nid] = [p[0] + dx * w, p[1] + dy * w, p[2] + dz * w];
+      }
+      map[id] = next;
+
+      const ids = Object.keys(map);
+      for (let pass = 0; pass < 2; pass++) {
+        for (let i = 0; i < ids.length; i++) {
+          for (let j = i + 1; j < ids.length; j++) {
+            const a = map[ids[i]];
+            const b = map[ids[j]];
+            const dx = b[0] - a[0];
+            const dy = b[1] - a[1];
+            const dz = b[2] - a[2];
+            const dist = Math.max(0.001, Math.hypot(dx, dy, dz));
+            if (dist >= MIN_SEPARATION) continue;
+            const overlap = MIN_SEPARATION - dist;
+            const aLocked = ids[i] === id;
+            const bLocked = ids[j] === id;
+            const aShare = aLocked ? 0 : bLocked ? 1 : 0.5;
+            const ux = dx / dist;
+            const uy = dy / dist;
+            const uz = dz / dist;
+            map[ids[i]] = [
+              a[0] - ux * overlap * aShare,
+              a[1] - uy * overlap * aShare,
+              a[2] - uz * overlap * aShare,
+            ];
+            map[ids[j]] = [
+              b[0] + ux * overlap * (1 - aShare),
+              b[1] + uy * overlap * (1 - aShare),
+              b[2] + uz * overlap * (1 - aShare),
+            ];
+            // Momentum kick: harder shoves create deeper per-event overlap,
+            // so the bump speed naturally scales with the drag speed.
+            if (pass === 0) {
+              const kick = overlap * BUMP_KICK;
+              if (!aLocked && aShare > 0) {
+                const k = kick * aShare;
+                addKick(vel, ids[i], -ux * k, -uy * k, -uz * k);
+              }
+              if (!bLocked && aShare < 1) {
+                const k = kick * (1 - aShare);
+                addKick(vel, ids[j], ux * k, uy * k, uz * k);
+              }
             }
           }
         }
-        return map;
-      });
+      }
+      setPositions({ ...map });
     },
     [adjacency],
   );
 
+  /**
+   * Per-frame ball physics: integrate the velocities handed out by moveNode
+   * (and by release throws), damp them like felt friction, and resolve
+   * ball-on-ball collisions with restitution so a bumped ball can pass the
+   * bump on. Idle when every ball is at rest — the common case.
+   */
+  const stepPhysics = useCallback((rawDt: number) => {
+    const vel = velocitiesRef.current;
+    const movingIds = Object.keys(vel);
+    if (movingIds.length === 0) return;
+    const dt = Math.min(rawDt, 0.05);
+    const map = positionsRef.current;
+    const held = draggingRef.current;
+    const decay = Math.exp(-BUMP_DAMPING * dt);
+
+    for (const mid of movingIds) {
+      if (mid === held) {
+        delete vel[mid]; // the held ball is pointer-driven, not ballistic
+        continue;
+      }
+      const v = vel[mid];
+      const p = map[mid];
+      if (!p) {
+        delete vel[mid];
+        continue;
+      }
+      map[mid] = [p[0] + v[0] * dt, p[1] + v[1] * dt, p[2] + v[2] * dt];
+      const nv: Vec3 = [v[0] * decay, v[1] * decay, v[2] * decay];
+      if (Math.hypot(nv[0], nv[1], nv[2]) < BUMP_STOP_SPEED) delete vel[mid];
+      else vel[mid] = nv;
+    }
+
+    // Collisions: push overlapping pairs apart (the held ball never yields)
+    // and exchange the velocity component along the contact normal.
+    const ids = Object.keys(map);
+    for (let pass = 0; pass < 2; pass++) {
+      for (let i = 0; i < ids.length; i++) {
+        for (let j = i + 1; j < ids.length; j++) {
+          const a = map[ids[i]];
+          const b = map[ids[j]];
+          const dx = b[0] - a[0];
+          const dy = b[1] - a[1];
+          const dz = b[2] - a[2];
+          const dist = Math.max(0.001, Math.hypot(dx, dy, dz));
+          if (dist >= MIN_SEPARATION) continue;
+          const overlap = MIN_SEPARATION - dist;
+          const aHeld = ids[i] === held;
+          const bHeld = ids[j] === held;
+          const aShare = aHeld ? 0 : bHeld ? 1 : 0.5;
+          const ux = dx / dist;
+          const uy = dy / dist;
+          const uz = dz / dist;
+          map[ids[i]] = [
+            a[0] - ux * overlap * aShare,
+            a[1] - uy * overlap * aShare,
+            a[2] - uz * overlap * aShare,
+          ];
+          map[ids[j]] = [
+            b[0] + ux * overlap * (1 - aShare),
+            b[1] + uy * overlap * (1 - aShare),
+            b[2] + uz * overlap * (1 - aShare),
+          ];
+          if (pass === 0) {
+            const va = aHeld ? dragVelRef.current : (vel[ids[i]] ?? VEC3_ZERO);
+            const vb = bHeld ? dragVelRef.current : (vel[ids[j]] ?? VEC3_ZERO);
+            // Approach speed along the a→b normal; separate only if closing.
+            const s =
+              (va[0] - vb[0]) * ux + (va[1] - vb[1]) * uy + (va[2] - vb[2]) * uz;
+            if (s > 0) {
+              const bounce = (1 + BUMP_RESTITUTION) * s;
+              if (aHeld) {
+                addKick(vel, ids[j], ux * bounce, uy * bounce, uz * bounce);
+              } else if (bHeld) {
+                addKick(vel, ids[i], -ux * bounce, -uy * bounce, -uz * bounce);
+              } else {
+                const h = bounce / 2;
+                addKick(vel, ids[i], -ux * h, -uy * h, -uz * h);
+                addKick(vel, ids[j], ux * h, uy * h, uz * h);
+              }
+            }
+          }
+        }
+      }
+    }
+    setPositions({ ...map });
+  }, []);
+
   return (
-    <div
-      className={cn(
-        "relative h-[62dvh] min-h-96 w-full overflow-hidden lg:h-auto",
-        className,
+    <>
+      {/* The scene is portaled to <body> and fixed to the full viewport, so
+          WebGL can draw spheres all the way to the screen edges when the
+          user zooms in — the in-flow box below only reserves layout space.
+          (A portal, not position:fixed in place: the step container animates
+          with transforms, which would re-anchor and clip a fixed child.) */}
+      {createPortal(
+        <div className="fixed inset-0 z-0">
+          {/* A narrow FOV flattens perspective so near spheres don't balloon
+              over their neighbors' screen-space clearance. */}
+          <Canvas
+            dpr={[1, 2]}
+            camera={{ fov: 32, position: [0, 0, 24] }}
+            style={{ position: "absolute", inset: 0 }}
+          >
+            <ambientLight intensity={0.9} />
+            <directionalLight position={[6, 10, 8]} intensity={1.9} />
+            <directionalLight position={[-8, -5, -6]} intensity={0.4} />
+            <FitCamera points={layout.points} radius={layout.radius} />
+            <PhysicsTicker step={stepPhysics} />
+            <OrbitControls
+              ref={controlsRef}
+              makeDefault
+              enableDamping
+              dampingFactor={0.12}
+              minDistance={layout.radius * 0.35}
+              maxDistance={layout.radius * 5}
+            />
+            <Edges3D
+              edges={curriculum.edges}
+              positions={positions}
+              activeId={draggingId ?? hoveredId}
+            />
+            {ordered.map((concept) => (
+              <ConceptNode
+                key={concept.id}
+                concept={concept}
+                position={positions[concept.id] ?? [0, 0, 0]}
+                best={mastery[concept.id] ?? 0}
+                selected={selectedId === concept.id}
+                dragging={draggingId === concept.id}
+                meshRef={meshRefs.get(concept.id)!}
+                occluders={occludersFor.get(concept.id)!}
+                haloTexture={haloTexture}
+                onSelectNode={onSelect}
+                onHoverNode={setHoveredId}
+                onDragStart={beginDrag}
+                onDrag={moveNode}
+                onDragEnd={endDrag}
+              />
+            ))}
+          </Canvas>
+
+          {/* Top of the viewport: the bottom is taken by the step nav pill
+              and the "Pick a concept" copy. */}
+          <div className="pointer-events-none absolute top-4 left-1/2 -translate-x-1/2 rounded-full border bg-background/85 px-3 py-1 text-[11px] whitespace-nowrap text-muted-foreground shadow-sm backdrop-blur">
+            Drag spheres to arrange · drag the background to rotate · scroll to
+            zoom
+          </div>
+        </div>,
+        document.body,
       )}
-    >
-      {/* The canvas is absolutely positioned so WebGL sizes from this
-          element's resolved box instead of a percentage of an indefinite
-          flex height (which collapses the canvas to its intrinsic size). */}
-      {/* A narrow FOV flattens perspective so near spheres don't balloon
-          over their neighbors' screen-space clearance. */}
-      <Canvas
-        dpr={[1, 2]}
-        camera={{ fov: 32, position: [0, 0, 24] }}
-        style={{ position: "absolute", inset: 0 }}
-      >
-        <ambientLight intensity={0.9} />
-        <directionalLight position={[6, 10, 8]} intensity={1.9} />
-        <directionalLight position={[-8, -5, -6]} intensity={0.4} />
-        <FitCamera points={layout.points} radius={layout.radius} />
-        <OrbitControls
-          ref={controlsRef}
-          makeDefault
-          enableDamping
-          dampingFactor={0.12}
-          minDistance={layout.radius * 0.35}
-          maxDistance={layout.radius * 5}
-        />
-        <Edges3D
-          edges={curriculum.edges}
-          positions={positions}
-          activeId={draggingId ?? hoveredId}
-        />
-        {ordered.map((concept) => (
-          <ConceptNode
-            key={concept.id}
-            concept={concept}
-            position={positions[concept.id] ?? [0, 0, 0]}
-            best={mastery[concept.id] ?? 0}
-            selected={selectedId === concept.id}
-            dragging={draggingId === concept.id}
-            meshRef={meshRefs.get(concept.id)!}
-            occluders={occludersFor.get(concept.id)!}
-            haloTexture={haloTexture}
-            onSelectNode={onSelect}
-            onHoverNode={setHoveredId}
-            onDragStart={beginDrag}
-            onDrag={moveNode}
-            onDragEnd={endDrag}
-          />
-        ))}
-      </Canvas>
 
-      <div className="pointer-events-none absolute bottom-2 left-1/2 -translate-x-1/2 rounded-full border bg-background/85 px-3 py-1 text-[11px] whitespace-nowrap text-muted-foreground shadow-sm backdrop-blur">
-        Drag spheres to arrange · drag the background to rotate · scroll to zoom
+      {/* Layout spacer: keeps the page structure (and the copy beneath the
+          graph) where it was before the canvas went full-viewport. */}
+      <div className={cn("h-[62dvh] min-h-96 w-full lg:h-auto", className)}>
+        {/* Keyboard fallback: the canvas is pointer-driven, so offer the same
+            selection as screen-reader/keyboard-accessible buttons. */}
+        <div className="sr-only">
+          {ordered.map((c) => (
+            <button key={c.id} type="button" onClick={() => onSelect(c.id)}>
+              Teach {c.title}
+            </button>
+          ))}
+        </div>
       </div>
-
-      {/* Keyboard fallback: the canvas is pointer-driven, so offer the same
-          selection as screen-reader/keyboard-accessible buttons. */}
-      <div className="sr-only">
-        {ordered.map((c) => (
-          <button key={c.id} type="button" onClick={() => onSelect(c.id)}>
-            Teach {c.title}
-          </button>
-        ))}
-      </div>
-    </div>
+    </>
   );
 }
