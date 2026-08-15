@@ -23,11 +23,13 @@ import { Progress } from "@/components/ui/progress";
 import { Textarea } from "@/components/ui/textarea";
 import { MisconceptionCard } from "@/components/misconception-card";
 import { ModeAvatar } from "@/components/mode-icon";
+import { PortraitStudentAvatar } from "@/components/portrait-student-avatar";
 import { RubricProgress } from "@/components/rubric-progress";
 import {
   StudentAvatar,
   type StudentAvatarState,
 } from "@/components/student-avatar";
+import { STUDENT_ART } from "@/lib/student-art";
 import {
   finishSession,
   getTurnSpeech,
@@ -389,14 +391,29 @@ export default function SessionPage() {
               conversationStarted ? "gap-0 border-b py-1.5" : "flex-1 gap-1 py-6",
             )}
           >
-            <StudentAvatar
-              state={avatarState}
-              mode={session.mode}
-              className={cn(
-                "transition-all duration-500",
-                conversationStarted ? "size-16 sm:size-20" : "size-40 sm:size-52",
-              )}
-            />
+            {STUDENT_ART[session.mode] ? (
+              <PortraitStudentAvatar
+                art={STUDENT_ART[session.mode]!}
+                state={avatarState}
+                className={cn(
+                  "transition-all duration-500",
+                  conversationStarted
+                    ? "size-16 sm:size-20"
+                    : "size-40 sm:size-52",
+                )}
+              />
+            ) : (
+              <StudentAvatar
+                state={avatarState}
+                mode={session.mode}
+                className={cn(
+                  "transition-all duration-500",
+                  conversationStarted
+                    ? "size-16 sm:size-20"
+                    : "size-40 sm:size-52",
+                )}
+              />
+            )}
             <p
               role="status"
               aria-live="polite"

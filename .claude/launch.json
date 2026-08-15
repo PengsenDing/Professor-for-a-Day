@@ -7,6 +7,18 @@
       "runtimeArgs": ["run", "dev", "--prefix", "apps/web"],
       "port": 3000,
       "autoPort": true
+    },
+    {
+      "name": "transition-lab",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "app", "--prefix", "transition-lab"],
+      "port": 5173
+    },
+    {
+      "name": "lottie-lab",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--prefix", "lottie-lab"],
+      "port": 3030
     }
   ]
 }

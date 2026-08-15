@@ -5,24 +5,7 @@ import { Check } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-/**
- * A separately cut-out arm sprite that waves on hover, paper-doll style
- * (same rig as image-based Lottie characters: the arm layer sits behind the
- * body and rotates around a shoulder pivot). All geometry is expressed as
- * percentages of the base portrait so it survives any display size.
- */
-export interface WavingArm {
-  src: string;
-  /** CSS offsets/size of the sprite relative to the base portrait box. */
-  left: string;
-  top: string;
-  width: string;
-  /** transform-origin inside the sprite = the shoulder pivot. */
-  origin: string;
-  /** Native sprite pixel size (for next/image). */
-  naturalWidth: number;
-  naturalHeight: number;
-}
+import type { WavingArm } from "@/lib/student-art";
 
 /**
  * Selectable student avatar for the setup flow ("Pick your student").

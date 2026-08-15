@@ -15,12 +15,11 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { IntroOverlay } from "@/components/intro/intro-overlay";
 import { KnowledgeGraph } from "@/components/knowledge-graph";
 import { MODE_ICONS } from "@/components/mode-icon";
-import {
-  StudentPickerAvatar,
-  type WavingArm,
-} from "@/components/student-picker-avatar";
+import { StudentPickerAvatar } from "@/components/student-picker-avatar";
+import { STUDENT_ART } from "@/lib/student-art";
 import { getCurriculum, startSession } from "@/lib/api";
 import {
   loadMastery,
@@ -30,26 +29,6 @@ import {
 import type { Curriculum, Mode } from "@/lib/types";
 import { MODES, MODE_BY_STUDENT_ID, STUDENT_IDS } from "@/lib/types";
 import { cn } from "@/lib/utils";
-
-/** Transparent portraits under public/; students without one use their icon.
- * Lily is layered paper-doll style: body render + a separate arm sprite that
- * waves on hover (geometry measured on the 736×981 master portrait). */
-const STUDENT_ART: Partial<
-  Record<Mode, { image: string; arm?: WavingArm }>
-> = {
-  beginner: {
-    image: "/avatars/lily-body.png",
-    arm: {
-      src: "/avatars/lily-arm.png",
-      left: "66.033%",
-      top: "56.065%",
-      width: "11.957%",
-      origin: "21.6% 17.7%",
-      naturalWidth: 88,
-      naturalHeight: 254,
-    },
-  },
-};
 
 type Step = 1 | 2;
 
@@ -135,33 +114,43 @@ export default function HomePage() {
       saveStoredSession(sessionFromCreated(created));
       router.push(`/session/${created.session_id}`);
     } catch (err) {
-      setStartError(err instanceof Error ? err.message : "Something went wrong.");
+      setStartError(
+        err instanceof Error ? err.message : "Something went wrong.",
+      );
       setPending(false);
     }
   }
 
   const stepAnimation = cn(
     "animate-in fade-in zoom-in-[0.98] duration-500 fill-mode-both",
-    direction === "forward" ? "slide-in-from-right-10" : "slide-in-from-left-10",
+    direction === "forward"
+      ? "slide-in-from-right-10"
+      : "slide-in-from-left-10",
   );
 
   return (
     <>
+      <IntroOverlay />
       {/* On lg+ screens the whole step fits the viewport (no page scroll);
           smaller screens keep their natural vertical scroll. */}
       <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 overflow-x-hidden p-4 pb-24 lg:max-h-dvh lg:gap-3 lg:overflow-hidden lg:pb-14">
-        <div className="space-y-2 pt-4 text-center lg:space-y-1 lg:pt-0">
-          <div className="mx-auto flex size-12 items-center justify-center rounded-xl border bg-background shadow-sm lg:size-9">
-            <GraduationCap className="size-6 lg:size-4.5" />
+        {/* The concept step gives the whole viewport to the graph; the header
+            only appears on the student step. */}
+        {step === 2 && (
+          <div className="space-y-2 pt-4 text-center lg:space-y-1 lg:pt-0">
+            <div className="mx-auto flex size-12 items-center justify-center rounded-xl border bg-background shadow-sm lg:size-9">
+              <GraduationCap className="size-6 lg:size-4.5" />
+            </div>
+            {/* Borel sits high above its baseline, so nudge it down optically. */}
+            <h1 className="font-script pt-2 text-3xl leading-none lg:pt-1 lg:text-xl">
+              Professor for a Day
+            </h1>
+            <p className="text-muted-foreground lg:text-sm">
+              Don&apos;t learn from AI. Teach it — 15 machine-learning concepts,
+              one AI student at a time.
+            </p>
           </div>
-          <h1 className="text-3xl font-semibold tracking-tight lg:text-xl">
-            Professor for a Day
-          </h1>
-          <p className="text-muted-foreground lg:text-sm">
-            Don&apos;t learn from AI. Teach it — 15 machine-learning concepts,
-            one AI student at a time.
-          </p>
-        </div>
+        )}
 
         {step === 1 ? (
           <section
@@ -171,13 +160,6 @@ export default function HomePage() {
               stepAnimation,
             )}
           >
-            <h2 className="text-sm font-medium">
-              Pick a concept
-              <span className="ml-2 font-normal text-muted-foreground">
-                Arrows are recommendations, never locks. Your best score is
-                saved in this browser.
-              </span>
-            </h2>
             {loading ? (
               <Skeleton className="h-72 w-full lg:h-auto lg:min-h-0 lg:flex-1" />
             ) : loadError || !curriculum ? (
@@ -205,6 +187,9 @@ export default function HomePage() {
                 onSelect={selectConcept}
               />
             )}
+            <p className="pb-1 text-center text-xs text-muted-foreground">
+              Pick a concept to teach
+            </p>
           </section>
         ) : (
           <section
