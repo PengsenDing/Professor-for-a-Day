@@ -309,36 +309,40 @@ class SessionOrchestrator:
     # -- finish -------------------------------------------------------------
 
     async def finish(self, session_id: str) -> SessionFinished:
-        document = await self._get_or_404(session_id)
+        # The same lock submit_turn holds: finishing while a turn is in flight
+        # would otherwise persist a report built from the pre-turn state.
+        lock = _SESSION_LOCKS.setdefault(session_id, asyncio.Lock())
+        async with lock:
+            document = await self._get_or_404(session_id)
 
-        if document["status"] == "ended":
-            return _finished_from_document(document)
+            if document["status"] == "ended":
+                return _finished_from_document(document)
 
-        rubric = self._rubrics[document["concept_id"]]
-        state = _state_from_document(document)
-        percent = document["progress_percent"]
-        report = build_report(
-            rubric=rubric,
-            catalog=self._catalog,
-            concept_id=document["concept_id"],
-            state=state,
-            final_percent=percent,
-        )
-        updated = await self._repository.finish(
-            session_id,
-            end_reason=EndReason.learner_finished.value,
-            final_percent=percent,
-            report=report.model_dump(),
-        )
-        if updated is None:
-            raise _session_not_found()
-        logger.info(
-            "session ended session_id=%s end_reason=%s progress_percent=%d",
-            session_id,
-            updated["end_reason"],
-            updated["progress_percent"],
-        )
-        return _finished_from_document(updated)
+            rubric = self._rubrics[document["concept_id"]]
+            state = _state_from_document(document)
+            percent = document["progress_percent"]
+            report = build_report(
+                rubric=rubric,
+                catalog=self._catalog,
+                concept_id=document["concept_id"],
+                state=state,
+                final_percent=percent,
+            )
+            updated = await self._repository.finish(
+                session_id,
+                end_reason=EndReason.learner_finished.value,
+                final_percent=percent,
+                report=report.model_dump(),
+            )
+            if updated is None:
+                raise _session_not_found()
+            logger.info(
+                "session ended session_id=%s end_reason=%s progress_percent=%d",
+                session_id,
+                updated["end_reason"],
+                updated["progress_percent"],
+            )
+            return _finished_from_document(updated)
 
     # -- speech lookup ------------------------------------------------------
 

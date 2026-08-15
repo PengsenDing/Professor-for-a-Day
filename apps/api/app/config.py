@@ -41,7 +41,7 @@ class Settings(BaseSettings):
     transcription_max_bytes: int = Field(default=15_000_000, gt=0)
 
     port: int = 8787
-    web_origin: str = "http://localhost:5173"
+    web_origin: str = "http://localhost:3000"
 
     mongodb_uri: str = "mongodb://localhost:27017"
     mongodb_database: str = "professor_for_a_day"
