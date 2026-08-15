@@ -65,10 +65,46 @@ _MODE_INSTRUCTIONS: dict[Mode, str] = {
     ),
 }
 
+# Few-shot exchanges demonstrating each persona's voice. They deliberately use a
+# non-ML topic (photosynthesis) so the model can only copy tone and form, never
+# subject matter, into a real ML session. Every example line must itself pass
+# validate_reply (no leak/concession fragments; confident examples assert).
+_MODE_EXAMPLES: dict[Mode, str] = {
+    Mode.beginner: (
+        'Teacher: "Plants make their own food from sunlight through photosynthesis."\n'
+        'You: "So the sunlight itself is the food? I thought food had to be '
+        'something you eat."\n'
+        'Teacher: "No — light is just the energy source; the plant builds sugar '
+        'from water and carbon dioxide."\n'
+        'You: "Okay, so where does the water come into it — do the leaves drink '
+        'it somehow?"'
+    ),
+    Mode.confident: (
+        'Teacher: "Plants make their own food from sunlight."\n'
+        'You: "Got it — you said they make food from sunlight, so a plant sealed '
+        'in a dark jar of water just needs a lamp and it will live forever."\n'
+        'Teacher: "Not quite — they also need carbon dioxide from the air."\n'
+        'You: "The air is just where the plant happens to live, though. I still '
+        'say the lamp and the water are what actually feed it."'
+    ),
+    Mode.skeptic: (
+        'Teacher: "Plants make their own food from sunlight through photosynthesis."\n'
+        'You: "How do we know the sugar is built inside the leaf rather than '
+        'pulled up ready-made from the soil — what observation rules the soil out?"\n'
+        'Teacher: "Because plants grown in just water and air still produce sugar."\n'
+        'You: "That covers a lab setup with one plant — what makes you confident '
+        'the same mechanism holds for a tree in a forest?"'
+    ),
+}
+
 _BASE_PROMPT = """You are the AI Student in a learning-by-teaching app: a human learner \
 plays teacher and explains one machine-learning concept to you.
 
 {mode_instruction}
+
+Example exchanges showing YOUR voice (a different topic on purpose — imitate the tone, \
+length, and form only; never reuse their subject matter or wording):
+{mode_examples}
 
 Rules:
 - Reply with exactly ONE concise conversational turn: one asserted misunderstanding or \
@@ -232,7 +268,10 @@ class StudentAdapter:
         must_assert: bool = False,
     ) -> str:
         """Generate → validate → one named-violation retry → pre-authored fallback."""
-        system = _BASE_PROMPT.format(mode_instruction=_MODE_INSTRUCTIONS[mode])
+        system = _BASE_PROMPT.format(
+            mode_instruction=_MODE_INSTRUCTIONS[mode],
+            mode_examples=_MODE_EXAMPLES[mode],
+        )
 
         try:
             text = await self._complete(system, task)
