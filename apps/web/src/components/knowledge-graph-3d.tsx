@@ -1164,12 +1164,15 @@ function Edges3D({
  * snaps back), click a sphere to select the concept.
  */
 export function KnowledgeGraph3D({
+  graphId,
   curriculum,
   mastery,
   selectedId,
   onSelect,
   className,
 }: {
+  /** Which knowledge graph is shown; scopes the saved ball arrangement. */
+  graphId: string;
   curriculum: Curriculum;
   mastery: Record<string, number>;
   selectedId: string | null;
@@ -1187,7 +1190,7 @@ export function KnowledgeGraph3D({
   // camera must frame the restored arrangement, hence the recomputed
   // points/radius.
   const initial = useMemo(() => {
-    const stored = loadGraphArrangement();
+    const stored = loadGraphArrangement(graphId);
     const positions: Record<string, Vec3> = {};
     for (const [id, p] of layout.positions) {
       positions[id] = stored[id] ?? p;
@@ -1198,7 +1201,7 @@ export function KnowledgeGraph3D({
       radius = Math.max(radius, Math.hypot(x, y, z));
     }
     return { positions, points, radius: radius + NODE_RADIUS + 1.4 };
-  }, [layout]);
+  }, [graphId, layout]);
 
   const [positions, setPositions] = useState<Record<string, Vec3>>(() => ({
     ...initial.positions,
@@ -1240,10 +1243,10 @@ export function KnowledgeGraph3D({
   useEffect(() => {
     return () => {
       if (arrangementDirtyRef.current) {
-        saveGraphArrangement(positionsRef.current);
+        saveGraphArrangement(graphId, positionsRef.current);
       }
     };
-  }, []);
+  }, [graphId]);
 
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
@@ -1560,10 +1563,10 @@ export function KnowledgeGraph3D({
       // localStorage write per arrangement, not per frame.
       if (!moved && !draggingRef.current && arrangementDirtyRef.current) {
         arrangementDirtyRef.current = false;
-        saveGraphArrangement(positionsRef.current);
+        saveGraphArrangement(graphId, positionsRef.current);
       }
     },
-    [stepPhysics, stepDodge, publishPositions],
+    [graphId, stepPhysics, stepDodge, publishPositions],
   );
 
   return (

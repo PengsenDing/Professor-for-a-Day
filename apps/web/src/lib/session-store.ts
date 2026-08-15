@@ -9,10 +9,15 @@ import type {
   StoredSession,
   TurnEnvelope,
 } from "./types";
+import { BUILTIN_GRAPH_ID } from "./types";
 
 const SESSIONS_KEY = "pfad:sessions";
-const MASTERY_KEY = "pfad:mastery";
-const GRAPH_ARRANGEMENT_KEY = "pfad:graph-arrangement";
+const MASTERY_KEY = "pfad:mastery-v2";
+/** Pre-multi-graph flat map; migrated once into the builtin graph's slot. */
+const LEGACY_MASTERY_KEY = "pfad:mastery";
+const GRAPH_ARRANGEMENT_KEY_PREFIX = "pfad:graph-arrangement:";
+/** Pre-multi-graph arrangement; migrated once to the builtin graph's key. */
+const LEGACY_GRAPH_ARRANGEMENT_KEY = "pfad:graph-arrangement";
 const FRESH_SESSION_KEY = "pfad:fresh-session";
 
 // ---------------------------------------------------------------------------
@@ -32,7 +37,15 @@ function saveAll(sessions: Record<string, StoredSession>) {
 }
 
 export function loadStoredSession(sessionId: string): StoredSession | null {
-  return loadAll()[sessionId] ?? null;
+  const stored = loadAll()[sessionId];
+  if (!stored) return null;
+  // Sessions stored before multi-graph support have no graph fields. They all
+  // belonged to the builtin graph; `null` is reserved for freeform sessions.
+  return {
+    ...stored,
+    graph_id: stored.graph_id === undefined ? BUILTIN_GRAPH_ID : stored.graph_id,
+    graph_update: stored.graph_update ?? null,
+  };
 }
 
 export function saveStoredSession(session: StoredSession) {
@@ -50,6 +63,7 @@ export function sessionFromCreated(created: SessionCreated): StoredSession {
   };
   return {
     session_id: created.session_id,
+    graph_id: created.graph_id,
     concept: created.concept,
     mode: created.mode,
     messages: [opening],
@@ -61,6 +75,7 @@ export function sessionFromCreated(created: SessionCreated): StoredSession {
     active_misconception: created.active_misconception,
     covered_points: [],
     report: null,
+    graph_update: null,
     created_at: new Date().toISOString(),
   };
 }
@@ -84,6 +99,7 @@ export function applyTurn(
     turn_number: envelope.turn_number,
   };
   const knownIds = new Set(session.covered_points.map((p) => p.id));
+  const graphUpdate = envelope.graph_update ?? session.graph_update;
   return {
     ...session,
     messages: [...session.messages, learnerMessage, studentMessage],
@@ -98,6 +114,12 @@ export function applyTurn(
       ...envelope.newly_covered_points.filter((p) => !knownIds.has(p.id)),
     ],
     report: envelope.report,
+    graph_update: graphUpdate,
+    // A freeform session belongs to the graph it just created.
+    graph_id:
+      envelope.graph_update?.created === true
+        ? envelope.graph_update.graph_id
+        : session.graph_id,
   };
 }
 
@@ -111,6 +133,11 @@ export function applyFinished(
     status: finished.status,
     end_reason: finished.end_reason,
     report: finished.report,
+    graph_update: finished.graph_update ?? session.graph_update,
+    graph_id:
+      finished.graph_update?.created === true
+        ? finished.graph_update.graph_id
+        : session.graph_id,
   };
 }
 
@@ -140,24 +167,59 @@ export function consumeFreshSession(sessionId: string): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// Mastery (best score per Concept, updated only when a session improves it)
+// Mastery (best score per Concept per graph, updated only when a session
+// improves it). Stored as { graphId: { conceptId: percent } }.
 
-export function loadMastery(): Record<string, number> {
+type MasteryStore = Record<string, Record<string, number>>;
+
+function loadMasteryStore(): MasteryStore {
   if (typeof window === "undefined") return {};
   try {
-    return JSON.parse(window.localStorage.getItem(MASTERY_KEY) ?? "{}");
+    const store: MasteryStore = JSON.parse(
+      window.localStorage.getItem(MASTERY_KEY) ?? "{}",
+    );
+    // One-time migration: the flat pre-multi-graph map was all Machine Learning.
+    const legacy = window.localStorage.getItem(LEGACY_MASTERY_KEY);
+    if (legacy !== null) {
+      try {
+        const flat: Record<string, number> = JSON.parse(legacy);
+        const builtin = { ...flat, ...(store[BUILTIN_GRAPH_ID] ?? {}) };
+        store[BUILTIN_GRAPH_ID] = builtin;
+        window.localStorage.setItem(MASTERY_KEY, JSON.stringify(store));
+      } catch {
+        // Corrupt legacy data: drop it rather than crash.
+      }
+      window.localStorage.removeItem(LEGACY_MASTERY_KEY);
+    }
+    return store;
   } catch {
     return {};
   }
 }
 
+export function loadMastery(graphId: string): Record<string, number> {
+  return loadMasteryStore()[graphId] ?? {};
+}
+
 /** Records a session's progress (per turn or final); keeps the previous best if higher. */
-export function recordMastery(conceptId: string, percent: number) {
-  const mastery = loadMastery();
+export function recordMastery(graphId: string, conceptId: string, percent: number) {
+  const store = loadMasteryStore();
+  const mastery = store[graphId] ?? {};
   if (percent > (mastery[conceptId] ?? 0)) {
     mastery[conceptId] = percent;
-    window.localStorage.setItem(MASTERY_KEY, JSON.stringify(mastery));
+    store[graphId] = mastery;
+    window.localStorage.setItem(MASTERY_KEY, JSON.stringify(store));
   }
+}
+
+/** Drop everything browser-local about one graph (after the server deleted it). */
+export function clearGraphLocalState(graphId: string) {
+  const store = loadMasteryStore();
+  if (graphId in store) {
+    delete store[graphId];
+    window.localStorage.setItem(MASTERY_KEY, JSON.stringify(store));
+  }
+  window.localStorage.removeItem(arrangementKey(graphId));
 }
 
 // ---------------------------------------------------------------------------
@@ -166,11 +228,24 @@ export function recordMastery(conceptId: string, percent: number) {
 /** World-space ball centers by concept id, as last arranged by the learner. */
 export type GraphArrangement = Record<string, [number, number, number]>;
 
-export function loadGraphArrangement(): GraphArrangement {
+function arrangementKey(graphId: string): string {
+  return `${GRAPH_ARRANGEMENT_KEY_PREFIX}${graphId}`;
+}
+
+export function loadGraphArrangement(graphId: string): GraphArrangement {
   if (typeof window === "undefined") return {};
   try {
+    // One-time migration: the un-keyed arrangement belonged to the ML graph.
+    const legacy = window.localStorage.getItem(LEGACY_GRAPH_ARRANGEMENT_KEY);
+    if (legacy !== null) {
+      if (window.localStorage.getItem(arrangementKey(BUILTIN_GRAPH_ID)) === null) {
+        window.localStorage.setItem(arrangementKey(BUILTIN_GRAPH_ID), legacy);
+      }
+      window.localStorage.removeItem(LEGACY_GRAPH_ARRANGEMENT_KEY);
+    }
+
     const raw: unknown = JSON.parse(
-      window.localStorage.getItem(GRAPH_ARRANGEMENT_KEY) ?? "{}",
+      window.localStorage.getItem(arrangementKey(graphId)) ?? "{}",
     );
     if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
       return {};
@@ -193,9 +268,12 @@ export function loadGraphArrangement(): GraphArrangement {
   }
 }
 
-export function saveGraphArrangement(arrangement: GraphArrangement) {
+export function saveGraphArrangement(
+  graphId: string,
+  arrangement: GraphArrangement,
+) {
   window.localStorage.setItem(
-    GRAPH_ARRANGEMENT_KEY,
+    arrangementKey(graphId),
     JSON.stringify(arrangement),
   );
 }

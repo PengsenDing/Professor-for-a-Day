@@ -30,10 +30,27 @@ class SessionRepository:
         await self._collection.create_index("created_at")
         await self._collection.create_index("turns.client_turn_id")
 
-    async def create(self, *, concept_id: str, mode: str, student_text: str) -> dict[str, Any]:
+    async def create(
+        self,
+        *,
+        concept_id: str,
+        concept_title: str,
+        mode: str,
+        student_text: str,
+        graph_id: str | None,
+        topic: str | None = None,
+        rubric: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         now = _utcnow()
         document: dict[str, Any] = {
+            "graph_id": graph_id,
             "concept_id": concept_id,
+            "concept_title": concept_title,
+            "topic": topic,
+            # Freeform sessions embed their generated rubric because no graph
+            # document exists yet; it is internal and never leaves the server.
+            "rubric": rubric,
+            "graph_update": None,
             "mode": mode,
             "status": "active",
             "end_reason": None,
@@ -98,24 +115,33 @@ class SessionRepository:
         end_reason: str,
         final_percent: int,
         report: dict[str, Any],
+        graph_update: dict[str, Any] | None = None,
+        graph_id: str | None = None,
     ) -> dict[str, Any] | None:
         """End an active session; on an already-ended one return it unchanged
-        so finishing stays idempotent (AC-END-4)."""
+        so finishing stays idempotent (AC-END-4).
+
+        `graph_update` persists with the exit write so idempotent replays never
+        re-summarize; `graph_id` backfills a freeform session once its graph
+        exists.
+        """
         object_id = _parse_id(session_id)
         if object_id is None:
             return None
+        set_fields: dict[str, Any] = {
+            "status": "ended",
+            "end_reason": end_reason,
+            "progress_percent": final_percent,
+            "final_score": final_percent,
+            "report": report,
+            "graph_update": graph_update,
+            "updated_at": _utcnow(),
+        }
+        if graph_id is not None:
+            set_fields["graph_id"] = graph_id
         updated = await self._collection.find_one_and_update(
             {"_id": object_id, "status": "active"},
-            {
-                "$set": {
-                    "status": "ended",
-                    "end_reason": end_reason,
-                    "progress_percent": final_percent,
-                    "final_score": final_percent,
-                    "report": report,
-                    "updated_at": _utcnow(),
-                }
-            },
+            {"$set": set_fields},
             return_document=True,
         )
         if updated is not None:

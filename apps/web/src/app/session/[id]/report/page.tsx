@@ -7,6 +7,7 @@ import {
   AlertTriangle,
   ArrowLeft,
   ArrowRight,
+  GitBranch,
   GraduationCap,
   Lightbulb,
   RotateCcw,
@@ -32,13 +33,15 @@ import {
   recordMastery,
   saveStoredSession,
 } from "@/lib/session-store";
-import type { TeacherReport } from "@/lib/types";
+import type { GraphUpdate, TeacherReport } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 export default function ReportPage() {
   const { id } = useParams<{ id: string }>();
   const [report, setReport] = useState<TeacherReport | null>(null);
   const [conceptTitle, setConceptTitle] = useState<string | null>(null);
+  const [graphId, setGraphId] = useState<string | null>(null);
+  const [graphUpdate, setGraphUpdate] = useState<GraphUpdate | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [reloadKey, setReloadKey] = useState(0);
@@ -51,12 +54,25 @@ export default function ReportPage() {
     Promise.resolve()
       .then(() => {
         const stored = loadStoredSession(id);
-        if (!cancelled) setConceptTitle(stored?.concept.title ?? null);
+        if (!cancelled) {
+          setConceptTitle(stored?.concept.title ?? null);
+          setGraphId(stored?.graph_id ?? null);
+          setGraphUpdate(stored?.graph_update ?? null);
+        }
         if (stored?.report) return stored.report;
         return finishSession(id).then((finished) => {
           if (stored && !cancelled) {
-            saveStoredSession(applyFinished(stored, finished));
-            recordMastery(stored.concept.id, finished.report.final_percent);
+            const applied = applyFinished(stored, finished);
+            saveStoredSession(applied);
+            setGraphId(applied.graph_id);
+            setGraphUpdate(applied.graph_update);
+            if (applied.graph_id !== null) {
+              recordMastery(
+                applied.graph_id,
+                applied.concept.id,
+                finished.report.final_percent,
+              );
+            }
           }
           return finished.report;
         });
@@ -131,10 +147,69 @@ export default function ReportPage() {
         >
           <ArrowLeft className="size-4" /> Back to session
         </Button>
-        <Button size="sm" nativeButton={false} render={<Link href="/" />}>
+        <Button
+          size="sm"
+          nativeButton={false}
+          render={<Link href={graphId ? `/graphs/${graphId}` : "/"} />}
+        >
           <GraduationCap className="size-4" /> Knowledge graph
         </Button>
       </div>
+
+      {graphUpdate && (
+        <Card className="gap-3 border-primary/40 py-4">
+          <CardHeader className="px-4">
+            <CardTitle className="flex items-center gap-2 text-sm font-semibold">
+              <GitBranch className="size-4 text-primary" />
+              {graphUpdate.created
+                ? "Your teaching became a knowledge graph"
+                : "Your knowledge graph grew"}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-wrap items-center justify-between gap-3 px-4">
+            <p className="text-sm">
+              {graphUpdate.created ? (
+                <>
+                  This session created{" "}
+                  <span className="font-medium">
+                    “{graphUpdate.graph_title}”
+                  </span>{" "}
+                  with {graphUpdate.added_concepts.length}{" "}
+                  {graphUpdate.added_concepts.length === 1
+                    ? "concept"
+                    : "concepts"}
+                  .
+                </>
+              ) : graphUpdate.added_concepts.length > 0 ? (
+                <>
+                  This session added{" "}
+                  <span className="font-medium">
+                    {graphUpdate.added_concepts
+                      .map((concept) => concept.title)
+                      .join(", ")}
+                  </span>{" "}
+                  to “{graphUpdate.graph_title}”.
+                </>
+              ) : (
+                <>
+                  “{graphUpdate.graph_title}” was reviewed — nothing new came up
+                  this time.
+                </>
+              )}
+            </p>
+            <Button
+              size="sm"
+              nativeButton={false}
+              render={<Link href={`/graphs/${graphUpdate.graph_id}`} />}
+            >
+              {graphUpdate.created
+                ? "Explore your new knowledge graph"
+                : "See your updated graph"}{" "}
+              <ArrowRight className="size-3.5" />
+            </Button>
+          </CardContent>
+        </Card>
+      )}
 
       <Card
         className={cn(
@@ -203,25 +278,32 @@ export default function ReportPage() {
         </CardContent>
       </Card>
 
-      <Card className="gap-3 py-4">
-        <CardHeader className="px-4">
-          <CardTitle className="flex items-center gap-2 text-sm font-semibold">
-            <ArrowRight className="size-4 text-primary" />
-            Teach next
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="flex items-center justify-between gap-3 px-4">
-          <p className="text-sm">
-            Recommended:{" "}
-            <span className="font-medium">
-              {report.recommended_next_concept.title}
-            </span>
-          </p>
-          <Button size="sm" variant="outline" nativeButton={false} render={<Link href="/" />}>
-            Pick it on the graph <ArrowRight className="size-3.5" />
-          </Button>
-        </CardContent>
-      </Card>
+      {report.recommended_next_concept && (
+        <Card className="gap-3 py-4">
+          <CardHeader className="px-4">
+            <CardTitle className="flex items-center gap-2 text-sm font-semibold">
+              <ArrowRight className="size-4 text-primary" />
+              Teach next
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="flex items-center justify-between gap-3 px-4">
+            <p className="text-sm">
+              Recommended:{" "}
+              <span className="font-medium">
+                {report.recommended_next_concept.title}
+              </span>
+            </p>
+            <Button
+              size="sm"
+              variant="outline"
+              nativeButton={false}
+              render={<Link href={graphId ? `/graphs/${graphId}` : "/"} />}
+            >
+              Pick it on the graph <ArrowRight className="size-3.5" />
+            </Button>
+          </CardContent>
+        </Card>
+      )}
     </main>
   );
 }

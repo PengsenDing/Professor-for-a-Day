@@ -16,6 +16,7 @@ import {
   Trash2,
   Volume2,
   VolumeX,
+  X,
 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -113,6 +114,10 @@ export default function SessionPage() {
   const [recording, setRecording] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
   const recorderRef = useRef<MediaRecorder | null>(null);
+  // Bumped when the learner cancels voice input; an in-flight transcription
+  // compares its captured generation and discards a stale result instead of
+  // submitting it. Nothing reaches the AI Student until submit() runs.
+  const voiceGenRef = useRef(0);
 
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -164,7 +169,12 @@ export default function SessionPage() {
     // Session progress is monotonic and final_percent equals the final
     // progress, so recording every turn keeps the home graph's water level
     // in sync with the live session without changing best-of semantics.
-    recordMastery(next.concept.id, next.progress.percent);
+    // A freeform session has no graph until its ending turn creates one
+    // (applyTurn backfills graph_id from graph_update); until then there is
+    // no graph namespace to record into.
+    if (next.graph_id !== null) {
+      recordMastery(next.graph_id, next.concept.id, next.progress.percent);
+    }
   }
 
   const speak = useCallback(
@@ -314,6 +324,33 @@ export default function SessionPage() {
     else void startRecording();
   }
 
+  // Discard the current voice input without sending anything to the AI
+  // Student: drop a live recording on the floor, or mark an in-flight
+  // transcription stale so its result is thrown away when it arrives.
+  const cancelVoiceInput = useCallback(() => {
+    voiceGenRef.current += 1;
+    const recorder = recorderRef.current;
+    if (recorder && recorder.state !== "inactive") {
+      // Detach onstop so the audio is never handed to transcription.
+      recorder.onstop = null;
+      recorder.stop();
+      recorder.stream.getTracks().forEach((t) => t.stop());
+    }
+    setRecording(false);
+    setTranscribing(false);
+  }, []);
+
+  // Escape cancels voice input — but only until the turn is actually being
+  // submitted; after that the explanation is already on its way.
+  useEffect(() => {
+    if ((!recording && !transcribing) || sending) return;
+    const onKeyDown = (e: globalThis.KeyboardEvent) => {
+      if (e.key === "Escape") cancelVoiceInput();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [recording, transcribing, sending, cancelVoiceInput]);
+
   // Release the microphone if the learner leaves mid-recording.
   useEffect(() => {
     return () => {
@@ -327,9 +364,12 @@ export default function SessionPage() {
   }, []);
 
   async function handleRecording(audio: Blob) {
+    const generation = voiceGenRef.current;
     setTranscribing(true);
     try {
       const { transcript } = await transcribeAudio(audio);
+      // Canceled while transcribing: discard the transcript, send nothing.
+      if (voiceGenRef.current !== generation) return;
       if (transcript.trim()) {
         // The transcript reveals word by word on the optimistic pending
         // bubble, filling the Judge wait; keyed by client_turn_id so the
@@ -349,12 +389,16 @@ export default function SessionPage() {
         setVoiceNote("Nothing was transcribed — try again or type instead.");
       }
     } catch (err) {
+      // A canceled transcription failing is not worth a warning.
+      if (voiceGenRef.current !== generation) return;
       // Transcription failures never touch the session; text input stays usable.
       setVoiceNote(
         err instanceof Error ? err.message : "Transcription failed. You can type instead.",
       );
     } finally {
-      setTranscribing(false);
+      // After a cancel the flag is already down — and a newer recording may
+      // even own it again, so a stale generation must not touch it.
+      if (voiceGenRef.current === generation) setTranscribing(false);
     }
   }
 
@@ -436,7 +480,11 @@ export default function SessionPage() {
             className="shrink-0"
             aria-label="Back to the knowledge graph"
             nativeButton={false}
-            render={<Link href="/" />}
+            render={
+              <Link
+                href={session.graph_id ? `/graphs/${session.graph_id}` : "/"}
+              />
+            }
           >
             <ArrowLeft className="size-4" />
           </Button>
@@ -583,6 +631,16 @@ export default function SessionPage() {
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Loader2 className="size-3.5 animate-spin" />
                 Transcribing your explanation…
+                {!sending && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-6 px-2 text-xs"
+                    onClick={cancelVoiceInput}
+                  >
+                    <X className="size-3.5" /> Cancel
+                  </Button>
+                )}
               </div>
             )}
             {ended && !studentRevealing && (
@@ -663,7 +721,7 @@ export default function SessionPage() {
             />
             <p className="mt-1 text-right text-[11px] text-muted-foreground">
               {recording
-                ? "Recording… click the mic again to stop and send"
+                ? "Recording… click the mic to stop and send · Esc to cancel"
                 : `${session.turns_remaining} turns left · Enter to send, or click the mic to talk`}
             </p>
 
@@ -672,29 +730,46 @@ export default function SessionPage() {
                 titles, click opens the full panel), and Send — one glass
                 language, floating out of phase. */}
             <div className="mt-2 flex items-center justify-center gap-8 sm:gap-10">
-              <ComposerSphere
-                icon={
-                  recording ? (
-                    <Square className="size-5 animate-pulse sm:size-6" />
-                  ) : (
-                    <Mic className="size-5 sm:size-6" />
-                  )
-                }
-                active={recording}
-                danger={recording}
-                float={{ duration: "5.7s", delay: "-2.3s" }}
-                disabled={busy || ended}
-                aria-label={
-                  recording ? "Stop recording and send" : "Start voice input"
-                }
-                aria-pressed={recording}
-                title={
-                  recording
-                    ? "Click to stop and send your explanation"
-                    : "Click to start talking"
-                }
-                onClick={toggleRecording}
-              />
+              {/* Anchored wrapper so the cancel button can sit exactly to
+                  the left of the mic sphere while it records, without
+                  shifting the centered three-sphere row. */}
+              <div className="relative">
+                {recording && (
+                  <Button
+                    variant="ghost"
+                    className="absolute right-full top-1/2 mr-3 h-auto -translate-y-1/2 flex-col gap-1 px-2.5 py-1.5 text-muted-foreground"
+                    aria-label="Cancel recording without sending"
+                    title="Cancel — nothing is sent"
+                    onClick={cancelVoiceInput}
+                  >
+                    <X className="size-4" />
+                    <span className="text-[11px] leading-none">Cancel</span>
+                  </Button>
+                )}
+                <ComposerSphere
+                  icon={
+                    recording ? (
+                      <Square className="size-5 animate-pulse sm:size-6" />
+                    ) : (
+                      <Mic className="size-5 sm:size-6" />
+                    )
+                  }
+                  active={recording}
+                  danger={recording}
+                  float={{ duration: "5.7s", delay: "-2.3s" }}
+                  disabled={busy || ended}
+                  aria-label={
+                    recording ? "Stop recording and send" : "Start voice input"
+                  }
+                  aria-pressed={recording}
+                  title={
+                    recording
+                      ? "Click to stop and send your explanation"
+                      : "Click to start talking"
+                  }
+                  onClick={toggleRecording}
+                />
+              </div>
               <SessionInsightSphere
                 points={session.covered_points}
                 misconception={session.active_misconception}
@@ -793,7 +868,9 @@ function MessageBubble({
         <div
           {...skipProps}
           className={cn(
-            "whitespace-pre-wrap rounded-2xl rounded-tl-sm border bg-muted/40 px-4 py-2.5 text-sm",
+            // text-base (not text-sm): the student's replies are the core
+            // reading surface of the session, so they get the larger size.
+            "whitespace-pre-wrap rounded-2xl rounded-tl-sm border bg-muted/40 px-4 py-3 text-base",
             revealing && "cursor-pointer",
           )}
         >

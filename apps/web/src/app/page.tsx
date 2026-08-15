@@ -1,68 +1,47 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { RotateCcw } from "lucide-react";
+import { GitBranch, Loader2, Plus, RotateCcw, Sparkles, Trash2 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { IntroOverlay } from "@/components/intro/intro-overlay";
-import { KnowledgeGraph } from "@/components/knowledge-graph";
-import { StartTeachingSphere } from "@/components/start-teaching-sphere";
+import { SetupStepDots } from "@/components/setup-step-dots";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { StudentVideoPickerAvatar } from "@/components/student-video-picker-avatar";
-import { CHARACTER_BY_MODE } from "@/lib/characters";
-import { getCurriculum, startSession } from "@/lib/api";
-import {
-  loadMastery,
-  markFreshSession,
-  saveStoredSession,
-  sessionFromCreated,
-} from "@/lib/session-store";
-import type { Curriculum, Mode } from "@/lib/types";
-import { MODES, MODE_BY_STUDENT_ID } from "@/lib/types";
+import { deleteGraph, getGraphs } from "@/lib/api";
+import { clearGraphLocalState } from "@/lib/session-store";
+import type { GraphSummary } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-type Step = 1 | 2;
-
-/** How long the selected node's highlight is visible before auto-advancing. */
-const ADVANCE_DELAY_MS = 450;
-
-export default function HomePage() {
+/**
+ * Landing page: every knowledge graph as a card, plus the "start a new graph
+ * from scratch" card. Picking a graph leads to its concept-select page
+ * (/graphs/[graphId]); the new-graph card leads to the freeform topic flow
+ * (/new), whose session ends by summarizing the conversation into a graph.
+ */
+export default function GraphPickerPage() {
   const router = useRouter();
 
-  const [curriculum, setCurriculum] = useState<Curriculum | null>(null);
-  const [mastery, setMastery] = useState<Record<string, number>>({});
+  const [graphs, setGraphs] = useState<GraphSummary[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [reloadKey, setReloadKey] = useState(0);
 
-  const [step, setStep] = useState<Step>(1);
-  const [direction, setDirection] = useState<"forward" | "back">("forward");
-  const advanceTimer = useRef<number | null>(null);
-
-  const [conceptId, setConceptId] = useState<string | null>(null);
-  // No default student: nothing is highlighted until the learner picks one.
-  const [mode, setMode] = useState<Mode | null>(null);
-  const [pending, setPending] = useState(false);
-  const [startError, setStartError] = useState<string | null>(null);
-
   useEffect(() => {
     let cancelled = false;
-    Promise.resolve()
-      .then(() => {
-        if (!cancelled) setMastery(loadMastery());
-        return getCurriculum();
-      })
+    getGraphs()
       .then((data) => {
         if (cancelled) return;
-        setCurriculum(data);
+        setGraphs(data.graphs);
         setLoadError(null);
       })
       .catch((err: unknown) => {
         if (cancelled) return;
         setLoadError(
-          err instanceof Error ? err.message : "Failed to load the curriculum.",
+          err instanceof Error ? err.message : "Failed to load the knowledge graphs.",
         );
       })
       .finally(() => {
@@ -73,213 +52,232 @@ export default function HomePage() {
     };
   }, [reloadKey]);
 
-  useEffect(() => {
-    return () => {
-      if (advanceTimer.current !== null) clearTimeout(advanceTimer.current);
-    };
-  }, []);
-
-  // The router can restore this page with its old state when the learner
-  // comes back from a session; a stale in-flight flag from that navigation
-  // must not leave the start control permanently disabled.
-  useEffect(() => {
-    setPending(false);
-  }, []);
-
-  function goTo(next: Step) {
-    if (next === step || pending) return;
-    if (next === 2 && !conceptId) return;
-    if (advanceTimer.current !== null) clearTimeout(advanceTimer.current);
-    setDirection(next > step ? "forward" : "back");
-    setStep(next);
-  }
-
-  function selectConcept(id: string) {
-    setConceptId(id);
-    // Let the selection highlight land, then glide to step 2.
-    if (advanceTimer.current !== null) clearTimeout(advanceTimer.current);
-    advanceTimer.current = window.setTimeout(() => {
-      setDirection("forward");
-      setStep(2);
-    }, ADVANCE_DELAY_MS);
-  }
-
-  const selected = curriculum?.concepts.find((c) => c.id === conceptId) ?? null;
-
-  async function start() {
-    if (!selected || !mode || pending) return;
-    setPending(true);
-    setStartError(null);
-    try {
-      const created = await startSession({ concept_id: selected.id, mode });
-      saveStoredSession(sessionFromCreated(created));
-      markFreshSession(created.session_id);
-      router.push(`/session/${created.session_id}`);
-    } catch (err) {
-      setStartError(
-        err instanceof Error ? err.message : "Something went wrong.",
-      );
-      setPending(false);
-    }
-  }
-
-  const stepAnimation = cn(
-    "animate-in fade-in zoom-in-[0.98] duration-500 fill-mode-both",
-    direction === "forward"
-      ? "slide-in-from-right-10"
-      : "slide-in-from-left-10",
-  );
-
   return (
     <>
       <IntroOverlay />
-      {/* Above the full-viewport graph canvas (z-0), below the intro (z-50). */}
       <ThemeToggle className="fixed top-3 right-3 z-10" />
-      {/* On lg+ screens the whole step fits the viewport (no page scroll);
-          smaller screens keep their natural vertical scroll. */}
-      <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 overflow-x-hidden p-4 pb-24 lg:max-h-dvh lg:gap-3 lg:overflow-hidden lg:pb-14">
-        {step === 1 ? (
-          <section
-            key="step-1"
-            className={cn(
-              "flex flex-col gap-2 lg:min-h-0 lg:flex-1",
-              stepAnimation,
-            )}
-          >
-            {loading ? (
-              <Skeleton className="h-72 w-full lg:h-auto lg:min-h-0 lg:flex-1" />
-            ) : loadError || !curriculum ? (
-              <div className="space-y-3">
-                <Alert variant="destructive">
-                  <AlertTitle>Could not load the curriculum</AlertTitle>
-                  <AlertDescription>{loadError ?? "No data."}</AlertDescription>
-                </Alert>
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setLoading(true);
-                    setReloadKey((k) => k + 1);
-                  }}
-                >
-                  <RotateCcw className="size-4" /> Retry
-                </Button>
-              </div>
-            ) : (
-              <KnowledgeGraph
-                className="lg:min-h-0 lg:flex-1"
-                curriculum={curriculum}
-                mastery={mastery}
-                selectedId={conceptId}
-                onSelect={selectConcept}
-              />
-            )}
-            <p className="pb-1 text-center text-xs text-muted-foreground">
-              Pick a concept to teach
-            </p>
-          </section>
+      <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-8 p-4 pb-16 pt-14 sm:pt-20">
+        <header className="space-y-1 text-center">
+          <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
+            Your knowledge graphs
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            Pick a graph to teach in — or teach something brand new and let a
+            graph grow out of the conversation.
+          </p>
+        </header>
+
+        {loading ? (
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <Skeleton key={i} className="h-40 w-full rounded-xl" />
+            ))}
+          </div>
+        ) : loadError || !graphs ? (
+          <div className="mx-auto w-full max-w-xl space-y-3">
+            <Alert variant="destructive">
+              <AlertTitle>Could not load the knowledge graphs</AlertTitle>
+              <AlertDescription>{loadError ?? "No data."}</AlertDescription>
+            </Alert>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setLoading(true);
+                setReloadKey((k) => k + 1);
+              }}
+            >
+              <RotateCcw className="size-4" /> Retry
+            </Button>
+          </div>
         ) : (
-          <section
-            key="step-2"
-            className={cn(
-              "mx-auto flex w-full max-w-2xl flex-1 flex-col lg:min-h-0 lg:overflow-y-auto",
-              stepAnimation,
+          <>
+            {deleteError && (
+              <Alert variant="destructive" className="mx-auto max-w-xl">
+                <AlertTitle>Could not delete the graph</AlertTitle>
+                <AlertDescription>{deleteError}</AlertDescription>
+              </Alert>
             )}
-          >
-            {/* my-auto centers the short step vertically without clipping if
-                it ever overflows (unlike justify-center inside overflow-y). */}
-            <div className="my-auto space-y-4">
-              <div className="spick grid gap-3 sm:grid-cols-3">
-                {(Object.keys(MODES) as Mode[]).map((m) => {
-                  const info = MODES[m];
-                  const select = (id: string) =>
-                    setMode(MODE_BY_STUDENT_ID[id] ?? m);
-
-                  // Every student is a pre-rendered video character; the card
-                  // and interaction behaviour are shared, only the clip set
-                  // (lib/characters.ts) differs per student.
-                  return (
-                    <StudentVideoPickerAvatar
-                      key={m}
-                      characterId={CHARACTER_BY_MODE[m]}
-                      name={info.name}
-                      label={info.label}
-                      description={info.description}
-                      selected={mode === m}
-                      onSelect={select}
-                    />
-                  );
-                })}
-              </div>
-
-              {startError && (
-                <Alert variant="destructive">
-                  <AlertTitle>Could not start the session</AlertTitle>
-                  <AlertDescription>{startError}</AlertDescription>
-                </Alert>
-              )}
-
-              <StartTeachingSphere
-                className="pt-2"
-                pending={pending}
-                disabled={!selected || !mode}
-                onStart={start}
-              />
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {graphs.map((graph, index) => (
+                <GraphCard
+                  key={graph.id}
+                  graph={graph}
+                  index={index}
+                  onOpen={() => router.push(`/graphs/${graph.id}`)}
+                  onDeleted={() => {
+                    setDeleteError(null);
+                    setGraphs(
+                      (current) =>
+                        current?.filter((g) => g.id !== graph.id) ?? current,
+                    );
+                  }}
+                  onDeleteError={(message) => setDeleteError(message)}
+                />
+              ))}
+              <NewGraphCard onOpen={() => router.push("/new")} />
             </div>
-          </section>
+          </>
         )}
       </main>
 
-      <nav
-        aria-label="Setup progress"
-        className="pointer-events-none fixed inset-x-0 bottom-4 z-10 flex justify-center"
-      >
-        <div className="pointer-events-auto flex items-center">
-          <StepDot
-            label="Pick a concept"
-            active={step === 1}
-            onClick={() => goTo(1)}
-          />
-          <StepDot
-            label="Pick a student"
-            active={step === 2}
-            disabled={!conceptId}
-            onClick={() => goTo(2)}
-          />
-        </div>
-      </nav>
+      {/* The later steps only exist once a graph is chosen, so their dots sit
+          disabled here — the same three-dot strip the wizard shows. */}
+      <SetupStepDots
+        steps={[
+          { label: "Pick a graph", active: true },
+          { label: "Pick a concept", disabled: true },
+          { label: "Pick a student", disabled: true },
+        ]}
+      />
     </>
   );
 }
 
-function StepDot({
-  label,
-  active,
-  disabled,
-  onClick,
+function GraphCard({
+  graph,
+  index,
+  onOpen,
+  onDeleted,
+  onDeleteError,
 }: {
-  label: string;
-  active: boolean;
-  disabled?: boolean;
-  onClick: () => void;
+  graph: GraphSummary;
+  index: number;
+  onOpen: () => void;
+  onDeleted: () => void;
+  onDeleteError: (message: string) => void;
 }) {
+  const [confirming, setConfirming] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  async function handleDelete() {
+    if (deleting) return;
+    setDeleting(true);
+    try {
+      await deleteGraph(graph.id);
+      // The server copy is gone; drop this graph's browser-local traces too.
+      clearGraphLocalState(graph.id);
+      onDeleted();
+    } catch (err) {
+      onDeleteError(
+        err instanceof Error ? err.message : "Something went wrong.",
+      );
+      setDeleting(false);
+      setConfirming(false);
+    }
+  }
+
+  return (
+    <div
+      className={cn(
+        "group relative animate-in fade-in slide-in-from-bottom-2 fill-mode-both duration-500",
+      )}
+      style={{ animationDelay: `${index * 60}ms` }}
+    >
+      <button
+        type="button"
+        onClick={onOpen}
+        className={cn(
+          "flex h-40 w-full flex-col justify-between rounded-xl border bg-card p-4 text-left shadow-sm transition-all",
+          "hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md",
+          "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary",
+        )}
+      >
+        <div className="flex w-full items-start justify-between gap-2">
+          <GitBranch className="size-5 text-primary/70 transition-transform group-hover:scale-110" />
+          <Badge variant={graph.source === "builtin" ? "secondary" : "outline"}>
+            {graph.source === "builtin" ? "Built-in" : "Yours"}
+          </Badge>
+        </div>
+        <div className="space-y-1">
+          <div className="line-clamp-2 font-medium leading-snug">{graph.title}</div>
+          <p className="text-xs text-muted-foreground">
+            {graph.concept_count}{" "}
+            {graph.concept_count === 1 ? "concept" : "concepts"}
+            {graph.created_at
+              ? ` · started ${new Date(graph.created_at).toLocaleDateString()}`
+              : " · curated"}
+          </p>
+        </div>
+      </button>
+
+      {/* Only user graphs are deletable; the builtin graph has no affordance
+          at all (the backend refuses it regardless). */}
+      {graph.source === "user" && !confirming && (
+        <button
+          type="button"
+          aria-label={`Delete “${graph.title}”`}
+          title="Delete this graph"
+          onClick={() => setConfirming(true)}
+          className={cn(
+            "absolute right-3 bottom-3 rounded-md p-1.5 text-muted-foreground/60 transition-all",
+            "opacity-0 group-hover:opacity-100 focus-visible:opacity-100",
+            "hover:bg-destructive/10 hover:text-destructive",
+            "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-destructive",
+          )}
+        >
+          <Trash2 className="size-4" />
+        </button>
+      )}
+
+      {confirming && (
+        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 rounded-xl border border-destructive/40 bg-card/95 p-4 text-center backdrop-blur-sm">
+          <p className="text-sm">
+            Delete <span className="font-medium">“{graph.title}”</span>?
+          </p>
+          <p className="text-xs text-muted-foreground">
+            The graph and its generated rubrics are removed for good. Past
+            session reports are kept.
+          </p>
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              variant="destructive"
+              disabled={deleting}
+              onClick={handleDelete}
+            >
+              {deleting ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Trash2 className="size-4" />
+              )}
+              Delete
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={deleting}
+              onClick={() => setConfirming(false)}
+            >
+              Cancel
+            </Button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function NewGraphCard({ onOpen }: { onOpen: () => void }) {
   return (
     <button
       type="button"
-      disabled={disabled}
-      aria-label={label}
-      title={label}
-      aria-current={active ? "step" : undefined}
-      onClick={onClick}
-      className={cn("group p-1.5", disabled && "cursor-not-allowed")}
+      onClick={onOpen}
+      className={cn(
+        "group flex h-40 flex-col items-center justify-center gap-3 rounded-xl border border-dashed p-4 text-center transition-all",
+        "text-muted-foreground hover:-translate-y-0.5 hover:border-primary/60 hover:text-foreground hover:shadow-md",
+        "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary",
+        "animate-in fade-in slide-in-from-bottom-2 fill-mode-both duration-500",
+      )}
     >
-      <span
-        className={cn(
-          "block size-2 rounded-full transition-all duration-300",
-          active ? "scale-125 bg-primary" : "bg-muted-foreground/40",
-          !disabled && !active && "group-hover:bg-muted-foreground",
-          disabled && "opacity-40",
-        )}
-      />
+      <span className="flex size-10 items-center justify-center rounded-full border border-dashed transition-colors group-hover:border-primary/60 group-hover:text-primary">
+        <Plus className="size-5" />
+      </span>
+      <span className="space-y-0.5">
+        <span className="block font-medium">Start a new knowledge graph</span>
+        <span className="flex items-center justify-center gap-1 text-xs">
+          <Sparkles className="size-3" /> Teach any topic from scratch
+        </span>
+      </span>
     </button>
   );
 }

@@ -9,6 +9,7 @@ from app.services.orchestrator import MASTERY_CLOSING_LINE
 from tests.fakes import make_evaluation
 
 GD = "gradient-descent"
+ML = "machine-learning"
 
 
 def gd_rubric():
@@ -17,7 +18,7 @@ def gd_rubric():
 
 def start(harness, concept_id: str = GD, mode: str = "confident") -> dict:
     response = harness.client.post(
-        "/api/sessions", json={"concept_id": concept_id, "mode": mode}
+        "/api/sessions", json={"graph_id": ML, "concept_id": concept_id, "mode": mode}
     )
     assert response.status_code == 201, response.text
     return response.json()
@@ -67,16 +68,36 @@ def test_every_session_starts_at_zero_regardless_of_history(harness) -> None:
 
 def test_unknown_concept_is_rejected_without_a_session(harness) -> None:
     response = harness.client.post(
-        "/api/sessions", json={"concept_id": "astrology", "mode": "beginner"}
+        "/api/sessions",
+        json={"graph_id": ML, "concept_id": "astrology", "mode": "beginner"},
     )
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "INVALID_CONCEPT"
     assert harness.repository.sessions == {}  # AC-SES-5
 
 
+def test_unknown_graph_is_rejected_without_a_session(harness) -> None:
+    response = harness.client.post(
+        "/api/sessions",
+        json={"graph_id": "astrology", "concept_id": GD, "mode": "beginner"},
+    )
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "INVALID_GRAPH"
+    assert harness.repository.sessions == {}
+
+
+def test_concept_without_graph_is_a_validation_failure(harness) -> None:
+    response = harness.client.post(
+        "/api/sessions", json={"concept_id": GD, "mode": "beginner"}
+    )
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "VALIDATION_FAILED"
+    assert harness.repository.sessions == {}
+
+
 def test_invalid_mode_is_rejected_without_a_session(harness) -> None:
     response = harness.client.post(
-        "/api/sessions", json={"concept_id": GD, "mode": "professor"}
+        "/api/sessions", json={"graph_id": ML, "concept_id": GD, "mode": "professor"}
     )
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "INVALID_MODE"
@@ -354,7 +375,8 @@ def test_finish_below_100_yields_a_complete_report(harness) -> None:
     next_concept = report["recommended_next_concept"]
     assert next_concept["id"] != GD  # AC-END-10
     catalog_ids = {
-        concept["id"] for concept in harness.client.get("/api/curriculum").json()["concepts"]
+        concept["id"]
+        for concept in harness.client.get(f"/api/graphs/{ML}/curriculum").json()["concepts"]
     }
     assert next_concept["id"] in catalog_ids
 
@@ -405,7 +427,7 @@ def test_opening_failure_leaves_no_partial_session(harness) -> None:
     harness.student.fail_opening = True
 
     response = harness.client.post(
-        "/api/sessions", json={"concept_id": GD, "mode": "beginner"}
+        "/api/sessions", json={"graph_id": ML, "concept_id": GD, "mode": "beginner"}
     )
 
     assert response.status_code == 502  # AC-SES-8

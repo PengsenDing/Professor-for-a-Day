@@ -7,6 +7,7 @@ but re-exported flat, so routes import from `app.schemas`.
 
 from .curriculum import Concept, ConceptId, ConceptRef, Curriculum, PrerequisiteEdge
 from .errors import Error, ErrorCode, ErrorEnvelope
+from .graphs import GraphId, GraphList, GraphSource, GraphSummary, GraphUpdate
 from .health import Database, Health
 from .sessions import (
     ActiveMisconception,
@@ -36,6 +37,11 @@ __all__ = [
     "Error",
     "ErrorCode",
     "ErrorEnvelope",
+    "GraphId",
+    "GraphList",
+    "GraphSource",
+    "GraphSummary",
+    "GraphUpdate",
     "Health",
     "InputMode",
     "Mode",

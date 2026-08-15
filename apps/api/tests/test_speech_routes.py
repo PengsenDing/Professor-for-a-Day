@@ -3,11 +3,12 @@
 from uuid import uuid4
 
 GD = "gradient-descent"
+ML = "machine-learning"
 
 
 def start(harness) -> dict:
     return harness.client.post(
-        "/api/sessions", json={"concept_id": GD, "mode": "confident"}
+        "/api/sessions", json={"graph_id": ML, "concept_id": GD, "mode": "confident"}
     ).json()
 
 

@@ -15,8 +15,9 @@ from pymongo.errors import PyMongoError
 from .config import get_settings
 from .db import MongoConnection
 from .errors import register_error_handlers
+from .repositories.graphs import GraphRepository
 from .repositories.sessions import SessionRepository
-from .routes import curriculum, health, sessions, speech
+from .routes import graphs, health, sessions, speech
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +36,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     if await mongo.ping():
         try:
             await SessionRepository(mongo.database).ensure_indexes()
+            await GraphRepository(mongo.database).ensure_indexes()
         except PyMongoError:
             # A read-only user or a mid-election replica set should not take the API down.
             logger.exception("MongoDB index creation failed; continuing without it")
@@ -67,14 +69,14 @@ def create_app() -> FastAPI:
     app.add_middleware(
         CORSMiddleware,
         allow_origins=[settings.web_origin],
-        allow_methods=["GET", "POST", "OPTIONS"],
+        allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
         allow_headers=["Content-Type"],
     )
 
     register_error_handlers(app)
 
     app.include_router(health.router)
-    app.include_router(curriculum.router)
+    app.include_router(graphs.router)
     app.include_router(sessions.router)
     app.include_router(speech.router)
 

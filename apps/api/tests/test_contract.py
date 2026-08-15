@@ -21,6 +21,9 @@ COMPARED_COMPONENTS = [
     "ConceptRef",
     "PrerequisiteEdge",
     "Curriculum",
+    "GraphSummary",
+    "GraphList",
+    "GraphUpdate",
     "StartSessionRequest",
     "SessionCreated",
     "SubmitTurnRequest",
@@ -34,7 +37,7 @@ COMPARED_COMPONENTS = [
     # `Error` is inlined inside ErrorEnvelope in the contract, not a named component.
     "ErrorEnvelope",
 ]
-COMPARED_ENUMS = ["Mode", "InputMode", "SessionStatus", "ErrorCode"]
+COMPARED_ENUMS = ["Mode", "InputMode", "SessionStatus", "EndReason", "GraphSource", "ErrorCode"]
 
 
 @pytest.fixture(scope="module")

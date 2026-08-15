@@ -32,7 +32,7 @@ class PrerequisiteEdge(BaseModel):
 
 
 class Curriculum(BaseModel):
-    concepts: list[Concept] = Field(min_length=15, max_length=15)
+    concepts: list[Concept] = Field(min_length=1)
     edges: list[PrerequisiteEdge] = Field(
         description="Directed prerequisite recommendations. Acyclic; never locks a node."
     )

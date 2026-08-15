@@ -210,3 +210,25 @@ The learner sees a non-decreasing session progress bar. A concept reaches 100% o
 - The Knowledge Graph is a curriculum and progress visualization, not a claim that the system infers a complete cognitive model of the learner.
 - Voice output is mandatory MVP behavior. Voice selection is the advanced feature intentionally deferred.
 - The Teacher Report should distinguish evidence observed in this session from general encouragement. It must not claim that a learner fully understands a Concept below the rubric-defined 100% threshold.
+
+## Addendum (2026-08): Multiple Knowledge Graphs
+
+The single fixed Knowledge Graph became one of several (see ADR-0004 and
+`packages/shared/openapi.yaml`):
+
+- A landing page lists every knowledge graph — the builtin Machine Learning graph plus
+  user-created ones — and a "start a new knowledge graph" entry. Picking a graph leads
+  to the existing concept-select → student-select flow, scoped to that graph.
+- Starting from scratch means teaching: the learner names a topic, the backend
+  generates a rubric for it (validated, cached), the session runs the ordinary
+  Judge/Student loop, and at session end the conversation is summarized into a new
+  graph. Later sessions on a user graph may append concepts and edges (append-only,
+  deduplicated, acyclic, capped per session). The builtin graph never changes.
+- User-graph concepts are teachable; their rubrics are generated on demand at session
+  start and cached in MongoDB. Mastery stays browser-local, now namespaced per graph.
+- User graphs can be deleted from the picker page (builtin never; past session
+  reports are kept). Further graph management (rename, edit, merge) stays out of
+  scope.
+- "Automated rubric authoring" is therefore no longer out of scope for user graphs;
+  the builtin graph's hand-authored rubrics and the rest of the Out of Scope list are
+  unchanged.

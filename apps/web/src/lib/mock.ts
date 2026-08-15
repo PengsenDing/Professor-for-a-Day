@@ -6,9 +6,13 @@
 
 import { ApiError } from "./errors";
 import type {
+  Concept,
   Curriculum,
   EndReason,
+  GraphList,
+  GraphUpdate,
   Mode,
+  PrerequisiteEdge,
   RubricPointRef,
   SessionCreated,
   SessionFinished,
@@ -18,9 +22,16 @@ import type {
   Transcription,
   TurnEnvelope,
 } from "./types";
-import { MAX_LEARNER_TEXT_LENGTH, MAX_LEARNER_TURNS, MODES } from "./types";
+import {
+  BUILTIN_GRAPH_ID,
+  MAX_LEARNER_TEXT_LENGTH,
+  MAX_LEARNER_TURNS,
+  MAX_TOPIC_LENGTH,
+  MODES,
+} from "./types";
 
 const STORAGE_KEY = "pfad:mock-sessions";
+const GRAPHS_KEY = "pfad:mock-graphs";
 
 function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -66,6 +77,47 @@ const CURRICULUM: Curriculum = {
 };
 
 // ---------------------------------------------------------------------------
+// User graphs (mock mirror of the knowledge_graphs collection)
+
+interface MockGraph {
+  id: string;
+  title: string;
+  concepts: Concept[];
+  edges: PrerequisiteEdge[];
+  created_at: string;
+}
+
+function loadGraphs(): Record<string, MockGraph> {
+  if (typeof window === "undefined") return {};
+  try {
+    return JSON.parse(window.localStorage.getItem(GRAPHS_KEY) ?? "{}");
+  } catch {
+    return {};
+  }
+}
+
+function saveGraphs(graphs: Record<string, MockGraph>) {
+  window.localStorage.setItem(GRAPHS_KEY, JSON.stringify(graphs));
+}
+
+function slugify(text: string): string {
+  const slug = text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60)
+    .replace(/-+$/g, "");
+  return slug || "topic";
+}
+
+/** The graph a session reads concepts from; null when the id is unknown. */
+function graphCurriculum(graphId: string): Curriculum | null {
+  if (graphId === BUILTIN_GRAPH_ID) return CURRICULUM;
+  const graph = loadGraphs()[graphId];
+  return graph ? { concepts: graph.concepts, edges: graph.edges } : null;
+}
+
+// ---------------------------------------------------------------------------
 // Rubrics
 
 interface MockRubric {
@@ -90,9 +142,8 @@ const GRADIENT_DESCENT_RUBRIC: MockRubric = {
     /overshoot|over-?shoot|diverg|oscillat|too\s+(big|large|high)|blow.?up|unstable|jump(s|ed)?\s+(over|past)|miss(es)?\s+the\s+minimum|small(er)?\s+step|step\s+size|learning\s+rate/i,
 };
 
-function rubricFor(conceptId: string): MockRubric {
+function rubricFor(conceptId: string, title: string): MockRubric {
   if (conceptId === "gradient-descent") return GRADIENT_DESCENT_RUBRIC;
-  const title = conceptTitle(conceptId);
   return {
     points: [
       { id: `${conceptId}-1`, label: `Defines ${title} precisely` },
@@ -109,16 +160,17 @@ function rubricFor(conceptId: string): MockRubric {
   };
 }
 
-function conceptTitle(conceptId: string): string {
-  return CURRICULUM.concepts.find((c) => c.id === conceptId)?.title ?? conceptId;
-}
-
 // ---------------------------------------------------------------------------
 // Session storage
 
 interface MockSession {
   session_id: string;
+  /** Null while a freeform session's graph does not exist yet. */
+  graph_id: string | null;
   concept_id: string;
+  concept_title: string;
+  /** The freeform topic; null for graph-concept sessions. */
+  topic: string | null;
   mode: Mode;
   covered_ids: string[];
   misconception_posed: boolean;
@@ -127,8 +179,29 @@ interface MockSession {
   status: "active" | "ended";
   end_reason: EndReason | null;
   report: TeacherReport | null;
+  graph_update: GraphUpdate | null;
   /** Stored envelopes keyed by client_turn_id (idempotent retries). */
   turns: Record<string, TurnEnvelope>;
+}
+
+/** Pre-multi-graph stored sessions lack the new fields; read them as builtin. */
+function sessionGraphId(session: MockSession): string | null {
+  if (session.graph_id !== undefined && session.graph_id !== null) {
+    return session.graph_id;
+  }
+  return session.topic ? null : BUILTIN_GRAPH_ID;
+}
+
+function sessionTitle(session: MockSession): string {
+  return (
+    session.concept_title ??
+    CURRICULUM.concepts.find((c) => c.id === session.concept_id)?.title ??
+    session.concept_id
+  );
+}
+
+function sessionRubric(session: MockSession): MockRubric {
+  return rubricFor(session.concept_id, sessionTitle(session));
 }
 
 function loadAll(): Record<string, MockSession> {
@@ -154,20 +227,32 @@ function requireSession(sessions: Record<string, MockSession>, id: string): Mock
 // Progress and reports
 
 function percentFor(session: MockSession): number {
-  const rubric = rubricFor(session.concept_id);
+  const rubric = sessionRubric(session);
   const raw = Math.round((session.covered_ids.length / rubric.points.length) * 100);
   const challengeCleared = session.misconception_posed && session.misconception_resolved;
   return challengeCleared ? raw : Math.min(raw, 99);
 }
 
-function recommendedNext(conceptId: string) {
-  const edge = CURRICULUM.edges.find((e) => e.from === conceptId);
-  const nextId = edge?.to ?? CURRICULUM.concepts.find((c) => c.id !== conceptId)!.id;
-  return { id: nextId, title: conceptTitle(nextId) };
+/** Next concept from the session's own graph; null for freeform sessions and
+ * single-concept graphs (the report never depends on the just-created graph). */
+function recommendedNext(session: MockSession): { id: string; title: string } | null {
+  const graphId = sessionGraphId(session);
+  if (graphId === null) return null;
+  const curriculum = graphCurriculum(graphId);
+  if (!curriculum) return null;
+  const titles = new Map(curriculum.concepts.map((c) => [c.id, c.title]));
+  const successor = curriculum.edges.find((e) => e.from === session.concept_id);
+  if (successor) return { id: successor.to, title: titles.get(successor.to) ?? successor.to };
+  const predecessor = curriculum.edges.find((e) => e.to === session.concept_id);
+  if (predecessor) {
+    return { id: predecessor.from, title: titles.get(predecessor.from) ?? predecessor.from };
+  }
+  const other = curriculum.concepts.find((c) => c.id !== session.concept_id);
+  return other ? { id: other.id, title: other.title } : null;
 }
 
 function buildReport(session: MockSession): TeacherReport {
-  const rubric = rubricFor(session.concept_id);
+  const rubric = sessionRubric(session);
   const covered = rubric.points.filter((p) => session.covered_ids.includes(p.id));
   const uncovered = rubric.points.filter((p) => !session.covered_ids.includes(p.id));
   const finalPercent = percentFor(session);
@@ -187,16 +272,83 @@ function buildReport(session: MockSession): TeacherReport {
       uncovered.length > 0
         ? `Cover the missing point "${uncovered[0].label}" with one concrete example next time.`
         : "Add one concrete worked example to ground your strongest explanation.",
-    recommended_next_concept: recommendedNext(session.concept_id),
+    recommended_next_concept: recommendedNext(session),
     mastery_achieved: finalPercent === 100,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Session-end graph work (mock mirror of the backend's summarizer + merge)
+
+function finalizeGraph(session: MockSession): GraphUpdate | null {
+  const graphId = sessionGraphId(session);
+  if (graphId === BUILTIN_GRAPH_ID) return null; // ADR-0002: never mutated
+
+  const graphs = loadGraphs();
+  if (graphId === null) {
+    // Freeform: create the graph — the topic node plus two canned neighbors.
+    const slug = session.concept_id;
+    const title = sessionTitle(session);
+    const graph: MockGraph = {
+      id: `mock-graph-${crypto.randomUUID().slice(0, 8)}`,
+      title,
+      concepts: [
+        { id: slug, title, summary: session.topic ?? title },
+        {
+          id: `${slug}-fundamentals`,
+          title: `${title} fundamentals`,
+          summary: `The background ideas ${title} builds on.`,
+        },
+        {
+          id: `${slug}-in-practice`,
+          title: `${title} in practice`,
+          summary: `Where ${title} shows up in the real world.`,
+        },
+      ],
+      edges: [
+        { from: `${slug}-fundamentals`, to: slug },
+        { from: slug, to: `${slug}-in-practice` },
+      ],
+      created_at: new Date().toISOString(),
+    };
+    graphs[graph.id] = graph;
+    saveGraphs(graphs);
+    return {
+      graph_id: graph.id,
+      graph_title: graph.title,
+      created: true,
+      added_concepts: graph.concepts.map((c) => ({ id: c.id, title: c.title })),
+    };
+  }
+
+  // User graph: append one deterministic neighbor if it is not there yet.
+  const graph = graphs[graphId];
+  if (!graph) return null;
+  const newId = `${session.concept_id}-in-practice`;
+  const added: { id: string; title: string }[] = [];
+  if (!graph.concepts.some((c) => c.id === newId)) {
+    const title = `${sessionTitle(session)} in practice`;
+    graph.concepts.push({
+      id: newId,
+      title,
+      summary: `Where ${sessionTitle(session)} shows up in the real world.`,
+    });
+    graph.edges.push({ from: session.concept_id, to: newId });
+    added.push({ id: newId, title });
+    saveGraphs(graphs);
+  }
+  return {
+    graph_id: graph.id,
+    graph_title: graph.title,
+    created: false,
+    added_concepts: added,
   };
 }
 
 // ---------------------------------------------------------------------------
 // Student voice
 
-function openingQuestion(conceptId: string, mode: Mode): string {
-  const title = conceptTitle(conceptId);
+function openingQuestion(conceptId: string, title: string, mode: Mode): string {
   if (conceptId === "gradient-descent" && mode === "confident") {
     return "I read that gradient descent just tries random parameter values until the loss looks small. That's basically it, right?";
   }
@@ -214,7 +366,7 @@ function challengeText(session: MockSession): string {
   if (session.concept_id === "gradient-descent") {
     return "Okay, so the gradient tells us the direction. But then taking the biggest possible step each time must be fastest — why would anyone use small steps?";
   }
-  const title = conceptTitle(session.concept_id);
+  const title = sessionTitle(session);
   switch (session.mode) {
     case "beginner":
       return `Oh nice, that makes sense! So ${title} is just always the right tool then — whatever the problem, I should use it?`;
@@ -229,7 +381,7 @@ function persistText(session: MockSession): string {
   if (session.concept_id === "gradient-descent") {
     return "I'm not convinced yet — if the gradient points the right way, bigger steps in that direction should simply get me there faster, no?";
   }
-  return `But you didn't really answer my point — I still think ${conceptTitle(session.concept_id)} applies everywhere. What's the actual limit?`;
+  return `But you didn't really answer my point — I still think ${sessionTitle(session)} applies everywhere. What's the actual limit?`;
 }
 
 function resolvedText(session: MockSession, nextPoint: RubricPointRef | undefined): string {
@@ -254,7 +406,7 @@ function nextPointText(session: MockSession, nextPoint: RubricPointRef): string 
 function masteryText(session: MockSession): string {
   return session.concept_id === "gradient-descent"
     ? "That makes sense now — overshooting explains why my loss exploded. Thanks, teacher!"
-    : `I could genuinely explain ${conceptTitle(session.concept_id)} to someone else now — what it is, how it works, and where it stops working. Thanks, teacher!`;
+    : `I could genuinely explain ${sessionTitle(session)} to someone else now — what it is, how it works, and where it stops working. Thanks, teacher!`;
 }
 
 function elaborateText(session: MockSession): string {
@@ -264,21 +416,87 @@ function elaborateText(session: MockSession): string {
 // ---------------------------------------------------------------------------
 // Public mock API
 
-export async function mockGetCurriculum(): Promise<Curriculum> {
+export async function mockGetGraphs(): Promise<GraphList> {
   await delay(300);
-  return CURRICULUM;
+  const userGraphs = Object.values(loadGraphs()).sort((a, b) =>
+    a.created_at.localeCompare(b.created_at),
+  );
+  return {
+    graphs: [
+      {
+        id: BUILTIN_GRAPH_ID,
+        title: "Machine Learning",
+        source: "builtin",
+        concept_count: CURRICULUM.concepts.length,
+        created_at: null,
+      },
+      ...userGraphs.map((graph) => ({
+        id: graph.id,
+        title: graph.title,
+        source: "user" as const,
+        concept_count: graph.concepts.length,
+        created_at: graph.created_at,
+      })),
+    ],
+  };
+}
+
+export async function mockGetGraphCurriculum(graphId: string): Promise<Curriculum> {
+  await delay(300);
+  const curriculum = graphCurriculum(graphId);
+  if (!curriculum) throw new ApiError("No such knowledge graph.", "GRAPH_NOT_FOUND", 404);
+  return curriculum;
+}
+
+export async function mockDeleteGraph(graphId: string): Promise<void> {
+  await delay(300);
+  if (graphId === BUILTIN_GRAPH_ID) {
+    throw new ApiError("The builtin graph cannot be deleted.", "GRAPH_NOT_DELETABLE", 409);
+  }
+  const graphs = loadGraphs();
+  if (!graphs[graphId]) {
+    throw new ApiError("No such knowledge graph.", "GRAPH_NOT_FOUND", 404);
+  }
+  delete graphs[graphId];
+  saveGraphs(graphs);
 }
 
 export async function mockStartSession(req: StartSessionRequest): Promise<SessionCreated> {
   await delay(600);
-  const concept = CURRICULUM.concepts.find((c) => c.id === req.concept_id);
-  if (!concept) throw new ApiError("Unknown concept id.", "INVALID_CONCEPT", 422);
   if (!["beginner", "confident", "skeptic"].includes(req.mode)) {
     throw new ApiError("Mode must be beginner, confident, or skeptic.", "INVALID_MODE", 422);
   }
+
+  const topic = req.topic?.trim();
+  let graphId: string | null;
+  let concept: { id: string; title: string };
+  if (topic) {
+    if (req.graph_id || req.concept_id) {
+      throw new ApiError("The request is invalid.", "VALIDATION_FAILED", 422);
+    }
+    if (topic.length > MAX_TOPIC_LENGTH) {
+      throw new ApiError("The request is invalid.", "VALIDATION_FAILED", 422);
+    }
+    graphId = null;
+    concept = { id: slugify(topic), title: topic };
+  } else {
+    if (!req.graph_id || !req.concept_id) {
+      throw new ApiError("The request is invalid.", "VALIDATION_FAILED", 422);
+    }
+    const curriculum = graphCurriculum(req.graph_id);
+    if (!curriculum) throw new ApiError("Unknown knowledge graph.", "INVALID_GRAPH", 422);
+    const found = curriculum.concepts.find((c) => c.id === req.concept_id);
+    if (!found) throw new ApiError("Unknown concept id.", "INVALID_CONCEPT", 422);
+    graphId = req.graph_id;
+    concept = { id: found.id, title: found.title };
+  }
+
   const session: MockSession = {
     session_id: crypto.randomUUID(),
+    graph_id: graphId,
     concept_id: concept.id,
+    concept_title: concept.title,
+    topic: topic ?? null,
     mode: req.mode,
     covered_ids: [],
     misconception_posed: false,
@@ -287,6 +505,7 @@ export async function mockStartSession(req: StartSessionRequest): Promise<Sessio
     status: "active",
     end_reason: null,
     report: null,
+    graph_update: null,
     turns: {},
   };
   const all = loadAll();
@@ -294,9 +513,10 @@ export async function mockStartSession(req: StartSessionRequest): Promise<Sessio
   saveAll(all);
   return {
     session_id: session.session_id,
-    concept: { id: concept.id, title: concept.title },
+    graph_id: graphId,
+    concept,
     mode: req.mode,
-    student_text: openingQuestion(concept.id, req.mode),
+    student_text: openingQuestion(concept.id, concept.title, req.mode),
     progress: { percent: 0 },
     learner_turn_count: 0,
     turns_remaining: 8,
@@ -330,7 +550,7 @@ export async function mockSubmitTurn(
     throw new ApiError("The explanation is too long.", "VALIDATION_FAILED", 422);
   }
 
-  const rubric = rubricFor(session.concept_id);
+  const rubric = sessionRubric(session);
   const uncovered = () => rubric.points.filter((p) => !session.covered_ids.includes(p.id));
   const newlyCovered: RubricPointRef[] = [];
   const cover = (n: number) => {
@@ -379,7 +599,13 @@ export async function mockSubmitTurn(
     session.status = "ended";
     session.end_reason = "turn_limit";
   }
-  if (session.status === "ended") session.report = buildReport(session);
+  if (session.status === "ended") {
+    session.report = buildReport(session);
+    session.graph_update = finalizeGraph(session);
+    if (session.graph_update?.created) {
+      session.graph_id = session.graph_update.graph_id;
+    }
+  }
 
   const envelope: TurnEnvelope = {
     turn_number: session.learner_turn_count,
@@ -396,6 +622,7 @@ export async function mockSubmitTurn(
     status: session.status,
     end_reason: session.end_reason,
     report: session.report,
+    graph_update: session.graph_update,
   };
   session.turns[req.client_turn_id] = envelope;
   saveAll(all);
@@ -410,6 +637,10 @@ export async function mockFinishSession(sessionId: string): Promise<SessionFinis
     session.status = "ended";
     session.end_reason = "learner_finished";
     session.report = buildReport(session);
+    session.graph_update = finalizeGraph(session);
+    if (session.graph_update?.created) {
+      session.graph_id = session.graph_update.graph_id;
+    }
     saveAll(all);
   }
   return {
@@ -418,6 +649,7 @@ export async function mockFinishSession(sessionId: string): Promise<SessionFinis
     end_reason: session.end_reason!,
     progress: { percent: session.report!.final_percent },
     report: session.report!,
+    graph_update: session.graph_update ?? null,
   };
 }
 

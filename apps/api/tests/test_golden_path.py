@@ -12,6 +12,7 @@ from app.curriculum.rubrics import load_rubrics
 from tests.fakes import make_evaluation
 
 GD = "gradient-descent"
+ML = "machine-learning"
 
 
 def test_gradient_descent_golden_path(harness) -> None:
@@ -19,20 +20,28 @@ def test_gradient_descent_golden_path(harness) -> None:
     client = harness.client
     collected_responses: list[str] = []
 
-    # 1. The curriculum contains gradient-descent with prerequisite edges.
-    curriculum = client.get("/api/curriculum")
+    # 1. The graph list carries the builtin graph, whose curriculum contains
+    #    gradient-descent with prerequisite edges.
+    graphs = client.get("/api/graphs")
+    collected_responses.append(graphs.text)
+    assert graphs.json()["graphs"][0]["id"] == ML
+
+    curriculum = client.get(f"/api/graphs/{ML}/curriculum")
     collected_responses.append(curriculum.text)
     concepts = {concept["id"] for concept in curriculum.json()["concepts"]}
     assert GD in concepts
     assert any(GD in (edge["from"], edge["to"]) for edge in curriculum.json()["edges"])
 
     # 2. Start a confident-mode session at 0%.
-    started = client.post("/api/sessions", json={"concept_id": GD, "mode": "confident"})
+    started = client.post(
+        "/api/sessions", json={"graph_id": ML, "concept_id": GD, "mode": "confident"}
+    )
     collected_responses.append(started.text)
     assert started.status_code == 201
     session = started.json()
     assert session["student_text"]
     assert session["progress"]["percent"] == 0
+    assert session["graph_id"] == ML
     session_id = session["session_id"]
 
     # 3. Transcribe a fake audio blob.
@@ -86,6 +95,9 @@ def test_gradient_descent_golden_path(harness) -> None:
     assert final_envelope["status"] == "ended"
     assert final_envelope["end_reason"] == "mastery"
     assert final_envelope["report"]["mastery_achieved"] is True
+    # Builtin-graph sessions never summarize or mutate the graph (ADR-0002).
+    assert final_envelope["graph_update"] is None
+    assert "graph_summarizer" not in harness.call_log
 
     # 7. Read the session back: ordered turns, per-turn evaluations, monotonic
     #    progress, stored report, and no audio anywhere (T17/T18).

@@ -65,6 +65,8 @@ def _validation_code(exc: RequestValidationError) -> ErrorCode:
     fields = {error["loc"][-1] for error in exc.errors() if error.get("loc")}
     if "mode" in fields:
         return ErrorCode.INVALID_MODE
+    if "graph_id" in fields:
+        return ErrorCode.INVALID_GRAPH
     if "concept_id" in fields:
         return ErrorCode.INVALID_CONCEPT
     if "learner_text" in fields:

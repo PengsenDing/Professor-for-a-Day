@@ -66,9 +66,10 @@ def _improvement_suggestion(state: ScoringState, final_percent: int) -> str:
     )
 
 
-def _next_concept(catalog: Curriculum, concept_id: str) -> ConceptRef:
+def _next_concept(catalog: Curriculum, concept_id: str) -> ConceptRef | None:
     """A successor in the prerequisite graph when one exists; otherwise a neighbor;
-    otherwise any other concept (AC-END-10). Deterministic by catalog order."""
+    otherwise any other concept; None on a single-concept graph (AC-END-10).
+    Deterministic by catalog order."""
     titles = {concept.id: concept.title for concept in catalog.concepts}
 
     for edge in catalog.edges:
@@ -80,4 +81,4 @@ def _next_concept(catalog: Curriculum, concept_id: str) -> ConceptRef:
     for concept in catalog.concepts:
         if concept.id != concept_id:
             return ConceptRef(id=concept.id, title=concept.title)
-    raise ValueError("The catalog has no concept to recommend")
+    return None

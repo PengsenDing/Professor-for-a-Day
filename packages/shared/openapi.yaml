@@ -27,6 +27,11 @@ info:
       and upstream error text never appear in a response.
     - Turn submissions are idempotent via a client-generated `client_turn_id`.
     - Mastery is browser-local and appears nowhere in this contract.
+    - Knowledge graphs: the builtin `machine-learning` graph is version-controlled
+      backend data; user graphs are created from freeform teaching sessions and
+      grow append-only at session end (see
+      docs/adr/0004-user-generated-knowledge-graphs.md). Rubric content never
+      appears in graph responses.
 
 # Anonymous by design: the MVP has no accounts or authentication (spec: Out of Scope).
 # Provider credentials live server-side only and never reach this boundary.
@@ -39,8 +44,8 @@ servers:
 tags:
   - name: system
     description: Process and dependency health.
-  - name: curriculum
-    description: Concept catalog and prerequisite graph. Never invokes an LLM.
+  - name: graphs
+    description: Knowledge graphs and their concept curricula. Never invokes an LLM.
   - name: sessions
     description: Teaching Session lifecycle — start, turns, finish, speech.
   - name: speech
@@ -64,18 +69,79 @@ paths:
                 model: gemini-2.5-pro
                 database: up
 
-  /api/curriculum:
+  /api/graphs:
     get:
-      tags: [curriculum]
-      operationId: getCurriculum
-      summary: Concept catalog and prerequisite edges
+      tags: [graphs]
+      operationId: listGraphs
+      summary: List knowledge graphs
       description: |
-        Returns exactly 15 Concepts and the directed prerequisite edges between
-        them. Backend-owned, version-controlled data; no LLM call, no rubric
-        content, no per-learner state. Edges are recommendations, never locks.
+        Returns every knowledge graph: the builtin Machine Learning graph first,
+        then user-created graphs oldest-first. No LLM call, no rubric content,
+        no per-learner state.
       responses:
         "200":
-          description: The full curriculum.
+          description: All knowledge graphs.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GraphList"
+              example:
+                graphs:
+                  - { id: machine-learning, title: Machine Learning, source: builtin, concept_count: 15, created_at: null }
+                  - { id: 66bcd1f2a9c4e35d8f01a2b3, title: Compilers, source: user, concept_count: 6, created_at: "2026-08-15T09:30:00Z" }
+        "503":
+          $ref: "#/components/responses/DatabaseUnavailable"
+
+  /api/graphs/{graph_id}:
+    delete:
+      tags: [graphs]
+      operationId: deleteGraph
+      summary: Delete a user-created knowledge graph
+      description: |
+        Permanently removes a user-created graph (its concepts, edges, and
+        cached generated rubrics). The builtin `machine-learning` graph can
+        never be deleted. Past Teaching Sessions and their reports are the
+        learning record and are never touched by graph deletion.
+      parameters:
+        - $ref: "#/components/parameters/GraphId"
+      responses:
+        "204":
+          description: The graph was deleted.
+        "404":
+          description: No such knowledge graph.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+              example:
+                error: { code: GRAPH_NOT_FOUND, message: "No such knowledge graph." }
+        "409":
+          description: The builtin graph cannot be deleted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+              example:
+                error: { code: GRAPH_NOT_DELETABLE, message: "The builtin graph cannot be deleted." }
+        "503":
+          $ref: "#/components/responses/DatabaseUnavailable"
+
+  /api/graphs/{graph_id}/curriculum:
+    get:
+      tags: [graphs]
+      operationId: getGraphCurriculum
+      summary: One graph's concepts and prerequisite edges
+      description: |
+        Returns the graph's Concepts and the directed prerequisite edges between
+        them. The builtin graph is backend-owned, version-controlled data; user
+        graphs are stored server-side and grow append-only at session end. No
+        LLM call, no rubric content, no per-learner state. Edges are
+        recommendations, never locks.
+      parameters:
+        - $ref: "#/components/parameters/GraphId"
+      responses:
+        "200":
+          description: The graph's full curriculum.
           content:
             application/json:
               schema:
@@ -112,6 +178,14 @@ paths:
                   - { from: overfitting, to: train-validation-test-split }
                   - { from: supervised-learning, to: confusion-matrix }
                   - { from: confusion-matrix, to: precision-vs-recall }
+        "404":
+          description: No such knowledge graph.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+              example:
+                error: { code: GRAPH_NOT_FOUND, message: "No such knowledge graph." }
         "503":
           $ref: "#/components/responses/DatabaseUnavailable"
 
@@ -121,19 +195,36 @@ paths:
       operationId: startSession
       summary: Start a Teaching Session
       description: |
-        Creates a session for one Concept and one AI Student mode and returns the
-        AI Student's opening question as text. The opening question is turn 0 for
-        the speech endpoint. Every session starts at 0% with no cross-session
-        carry-over. If the AI Student call fails, no session is created.
+        Creates a session and returns the AI Student's opening question as text.
+        The opening question is turn 0 for the speech endpoint. Every session
+        starts at 0% with no cross-session carry-over.
+
+        Two request shapes (exactly one):
+        - `graph_id` + `concept_id`: teach an existing concept of an existing
+          graph. A user-graph concept taught for the first time gets its rubric
+          generated (and cached) during this call.
+        - `topic`: freeform — teach a subject of your own. A rubric is generated
+          for the topic and, when the session ends, the conversation is
+          summarized into a new knowledge graph (`graph_update` on the ending
+          envelope).
+
+        If rubric generation or the AI Student call fails, no session is created.
       requestBody:
         required: true
         content:
           application/json:
             schema:
               $ref: "#/components/schemas/StartSessionRequest"
-            example:
-              concept_id: gradient-descent
-              mode: confident
+            examples:
+              existing_concept:
+                value:
+                  graph_id: machine-learning
+                  concept_id: gradient-descent
+                  mode: confident
+              freeform_topic:
+                value:
+                  topic: How compilers work
+                  mode: beginner
       responses:
         "201":
           description: Session created; the AI Student has asked its opening question.
@@ -143,6 +234,7 @@ paths:
                 $ref: "#/components/schemas/SessionCreated"
               example:
                 session_id: 66bcd1f2a9c4e35d8f01a2b3
+                graph_id: machine-learning
                 concept: { id: gradient-descent, title: Gradient Descent }
                 mode: confident
                 student_text: "I read that gradient descent just tries random parameter values until the loss looks small. That's basically it, right?"
@@ -152,12 +244,14 @@ paths:
                 status: active
                 active_misconception: null
         "422":
-          description: Unknown concept, invalid mode, or malformed body.
+          description: Unknown graph or concept, invalid mode, or malformed body.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
               examples:
+                unknown_graph:
+                  value: { error: { code: INVALID_GRAPH, message: "Unknown knowledge graph." } }
                 unknown_concept:
                   value: { error: { code: INVALID_CONCEPT, message: "Unknown concept id." } }
                 invalid_mode:
@@ -225,6 +319,7 @@ paths:
                     status: active
                     end_reason: null
                     report: null
+                    graph_update: null
                 mastery_reached:
                   summary: This turn reached 100% and ended the session
                   value:
@@ -251,6 +346,38 @@ paths:
                       improvement_suggestion: "Add one concrete numeric example of a single parameter update to ground the algebra."
                       recommended_next_concept: { id: learning-rate, title: Learning Rate }
                       mastery_achieved: true
+                    graph_update: null
+                freeform_session_ended:
+                  summary: A freeform session ended and created a knowledge graph
+                  value:
+                    turn_number: 8
+                    learner_transcript: "So to recap: a compiler front end lexes and parses source into an AST before any optimization happens."
+                    student_text: "Got it — the tree comes first, optimizations later. Thanks, teacher!"
+                    progress: { percent: 74 }
+                    newly_covered_points: []
+                    active_misconception: null
+                    learner_turn_count: 8
+                    turns_remaining: 0
+                    status: ended
+                    end_reason: turn_limit
+                    report:
+                      final_percent: 74
+                      explained_well:
+                        - "Distinguished lexing from parsing."
+                      misconceptions_corrected: []
+                      gaps_and_accidental_implications:
+                        - "Implied optimization happens during parsing."
+                      improvement_suggestion: "Walk through one source line end to end, naming each compiler stage as it transforms the code."
+                      recommended_next_concept: null
+                      mastery_achieved: false
+                    graph_update:
+                      graph_id: 66bcd1f2a9c4e35d8f01a2b3
+                      graph_title: Compilers
+                      created: true
+                      added_concepts:
+                        - { id: how-compilers-work, title: How compilers work }
+                        - { id: lexical-analysis, title: Lexical Analysis }
+                        - { id: parsing, title: Parsing }
         "404":
           $ref: "#/components/responses/SessionNotFound"
         "409":
@@ -330,7 +457,8 @@ paths:
         Ends an active session (`end_reason: "learner_finished"`) and returns the
         Teacher Report — including at 0% progress. Idempotent: finishing an
         already-ended session returns the same stored report with its original
-        `end_reason` and does not regenerate anything.
+        `end_reason` and does not regenerate anything (including `graph_update`,
+        which replays as stored and never re-summarizes).
       parameters:
         - $ref: "#/components/parameters/SessionId"
       responses:
@@ -356,6 +484,7 @@ paths:
                   improvement_suggestion: "Explain what controls the size of each update step and what happens when it is too large."
                   recommended_next_concept: { id: learning-rate, title: Learning Rate }
                   mastery_achieved: false
+                graph_update: null
         "404":
           $ref: "#/components/responses/SessionNotFound"
         "502":
@@ -422,6 +551,13 @@ paths:
 
 components:
   parameters:
+    GraphId:
+      name: graph_id
+      in: path
+      required: true
+      description: The knowledge-graph identifier from `GET /api/graphs`.
+      schema:
+        $ref: "#/components/schemas/GraphId"
     SessionId:
       name: session_id
       in: path
@@ -479,14 +615,68 @@ components:
           type: string
           enum: [up, down]
 
+    GraphId:
+      type: string
+      pattern: "^[a-z0-9]+(-[a-z0-9]+)*$"
+      description: Stable graph identifier. `machine-learning` is the builtin graph; user graphs use server-generated ids.
+
+    GraphSource:
+      type: string
+      enum: [builtin, user]
+
+    GraphSummary:
+      type: object
+      required: [id, title, source, concept_count, created_at]
+      properties:
+        id:
+          $ref: "#/components/schemas/GraphId"
+        title:
+          type: string
+        source:
+          $ref: "#/components/schemas/GraphSource"
+        concept_count:
+          type: integer
+          minimum: 1
+        created_at:
+          anyOf:
+            - type: string
+              format: date-time
+            - type: "null"
+          description: Null for the builtin graph, which predates the database.
+
+    GraphList:
+      type: object
+      required: [graphs]
+      properties:
+        graphs:
+          type: array
+          items:
+            $ref: "#/components/schemas/GraphSummary"
+
+    GraphUpdate:
+      type: object
+      required: [graph_id, graph_title, created, added_concepts]
+      properties:
+        graph_id:
+          $ref: "#/components/schemas/GraphId"
+        graph_title:
+          type: string
+        created:
+          type: boolean
+          description: True when this session created the graph; false when it grew one.
+        added_concepts:
+          type: array
+          items:
+            $ref: "#/components/schemas/ConceptRef"
+          description: All concepts of a newly created graph; only the appended ones for a grown graph. May be empty.
+
     Curriculum:
       type: object
       required: [concepts, edges]
       properties:
         concepts:
           type: array
-          minItems: 15
-          maxItems: 15
+          minItems: 1
           items:
             $ref: "#/components/schemas/Concept"
         edges:
@@ -562,10 +752,29 @@ components:
 
     StartSessionRequest:
       type: object
-      required: [concept_id, mode]
+      required: [mode]
+      description: |
+        Exactly one of (`graph_id` + `concept_id`) or `topic` must be provided.
       properties:
+        graph_id:
+          anyOf:
+            - $ref: "#/components/schemas/GraphId"
+            - type: "null"
+          description: Required together with `concept_id`; omit for `topic` sessions.
         concept_id:
-          $ref: "#/components/schemas/ConceptId"
+          anyOf:
+            - $ref: "#/components/schemas/ConceptId"
+            - type: "null"
+        topic:
+          anyOf:
+            - type: string
+              minLength: 1
+              maxLength: 200
+            - type: "null"
+          description: |
+            Free-text subject to teach. The backend generates a rubric for it
+            and, at session end, summarizes the conversation into a new
+            knowledge graph.
         mode:
           $ref: "#/components/schemas/Mode"
 
@@ -573,6 +782,7 @@ components:
       type: object
       required:
         - session_id
+        - graph_id
         - concept
         - mode
         - student_text
@@ -584,6 +794,11 @@ components:
       properties:
         session_id:
           type: string
+        graph_id:
+          anyOf:
+            - $ref: "#/components/schemas/GraphId"
+            - type: "null"
+          description: Null for a `topic` session until its graph is created at session end.
         concept:
           $ref: "#/components/schemas/ConceptRef"
         mode:
@@ -658,6 +873,7 @@ components:
         - status
         - end_reason
         - report
+        - graph_update
       properties:
         turn_number:
           type: integer
@@ -698,10 +914,18 @@ components:
             - $ref: "#/components/schemas/TeacherReport"
             - type: "null"
           description: Null while active; fully populated in the same envelope when the session ends.
+        graph_update:
+          anyOf:
+            - $ref: "#/components/schemas/GraphUpdate"
+            - type: "null"
+          description: |
+            Null while active, for builtin-graph sessions, and when graph
+            persistence failed. Populated on the ending turn of `topic` and
+            user-graph sessions. Idempotent retries replay the stored value.
 
     SessionFinished:
       type: object
-      required: [session_id, status, end_reason, progress, report]
+      required: [session_id, status, end_reason, progress, report, graph_update]
       properties:
         session_id:
           type: string
@@ -714,6 +938,11 @@ components:
           $ref: "#/components/schemas/Progress"
         report:
           $ref: "#/components/schemas/TeacherReport"
+        graph_update:
+          anyOf:
+            - $ref: "#/components/schemas/GraphUpdate"
+            - type: "null"
+          description: Same semantics as on `TurnEnvelope`.
 
     TeacherReport:
       type: object
@@ -746,7 +975,10 @@ components:
           minLength: 1
           description: Exactly one concrete, actionable suggestion. Always present, even at 0%.
         recommended_next_concept:
-          $ref: "#/components/schemas/ConceptRef"
+          anyOf:
+            - $ref: "#/components/schemas/ConceptRef"
+            - type: "null"
+          description: Null when the graph has no other concept to recommend.
         mastery_achieved:
           type: boolean
           description: True if and only if final_percent is 100. Drives the accomplishment animation client-side.
@@ -761,9 +993,12 @@ components:
     ErrorCode:
       type: string
       enum:
+        - INVALID_GRAPH
         - INVALID_CONCEPT
         - INVALID_MODE
         - EMPTY_SUBMISSION
+        - GRAPH_NOT_FOUND
+        - GRAPH_NOT_DELETABLE
         - SESSION_NOT_FOUND
         - TURN_NOT_FOUND
         - SESSION_ENDED

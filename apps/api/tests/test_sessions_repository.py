@@ -8,7 +8,11 @@ async def test_create_get_append_finish_roundtrip(mongo_database) -> None:
     await repository.ensure_indexes()
 
     created = await repository.create(
-        concept_id="gradient-descent", mode="confident", student_text="Why steps?"
+        concept_id="gradient-descent",
+        concept_title="Gradient Descent",
+        mode="confident",
+        student_text="Why steps?",
+        graph_id="machine-learning",
     )
     session_id = str(created["_id"])
 

@@ -31,6 +31,31 @@ export interface Curriculum {
   edges: PrerequisiteEdge[];
 }
 
+export type GraphSource = "builtin" | "user";
+
+export interface GraphSummary {
+  id: string;
+  title: string;
+  source: GraphSource;
+  concept_count: number;
+  /** Null for the builtin graph, which predates the database. */
+  created_at: string | null;
+}
+
+export interface GraphList {
+  graphs: GraphSummary[];
+}
+
+/** What a finished session did to a knowledge graph (null for builtin sessions). */
+export interface GraphUpdate {
+  graph_id: string;
+  graph_title: string;
+  /** True when this session created the graph; false when it grew one. */
+  created: boolean;
+  /** All concepts of a new graph; only the appended ones for a grown graph. */
+  added_concepts: ConceptRef[];
+}
+
 export interface Progress {
   /** 0–100. Monotonic within a session; capped at 99 while a misconception challenge is unposed or unresolved. */
   percent: number;
@@ -46,13 +71,19 @@ export interface ActiveMisconception {
   summary: string;
 }
 
+/** Exactly one of (`graph_id` + `concept_id`) or `topic` must be provided. */
 export interface StartSessionRequest {
-  concept_id: string;
+  graph_id?: string;
+  concept_id?: string;
+  /** Freeform subject to teach; the session's graph is created at session end. */
+  topic?: string;
   mode: Mode;
 }
 
 export interface SessionCreated {
   session_id: string;
+  /** Null for a topic session until its graph is created at session end. */
+  graph_id: string | null;
   concept: ConceptRef;
   mode: Mode;
   /** The AI Student's opening question — turn 0 for the speech endpoint. */
@@ -83,6 +114,7 @@ export interface TurnEnvelope {
   status: SessionStatus;
   end_reason: EndReason | null;
   report: TeacherReport | null;
+  graph_update: GraphUpdate | null;
 }
 
 export interface SessionFinished {
@@ -91,6 +123,7 @@ export interface SessionFinished {
   end_reason: EndReason;
   progress: Progress;
   report: TeacherReport;
+  graph_update: GraphUpdate | null;
 }
 
 export interface TeacherReport {
@@ -99,7 +132,8 @@ export interface TeacherReport {
   misconceptions_corrected: string[];
   gaps_and_accidental_implications: string[];
   improvement_suggestion: string;
-  recommended_next_concept: ConceptRef;
+  /** Null when the graph has no other concept to recommend. */
+  recommended_next_concept: ConceptRef | null;
   mastery_achieved: boolean;
 }
 
@@ -114,9 +148,12 @@ export interface Health {
 }
 
 export type ErrorCode =
+  | "INVALID_GRAPH"
   | "INVALID_CONCEPT"
   | "INVALID_MODE"
   | "EMPTY_SUBMISSION"
+  | "GRAPH_NOT_FOUND"
+  | "GRAPH_NOT_DELETABLE"
   | "SESSION_NOT_FOUND"
   | "TURN_NOT_FOUND"
   | "SESSION_ENDED"
@@ -153,6 +190,8 @@ export interface ChatMessage {
  */
 export interface StoredSession {
   session_id: string;
+  /** Null for a freeform session until its graph is created at session end. */
+  graph_id: string | null;
   concept: ConceptRef;
   mode: Mode;
   messages: ChatMessage[];
@@ -165,6 +204,8 @@ export interface StoredSession {
   /** Rubric points confirmed so far this session (accumulated from turn envelopes). */
   covered_points: RubricPointRef[];
   report: TeacherReport | null;
+  /** Set when the session ended and created/grew a knowledge graph. */
+  graph_update: GraphUpdate | null;
   created_at: string;
 }
 
@@ -208,5 +249,9 @@ export const MODE_BY_STUDENT_ID: Record<string, Mode> = Object.fromEntries(
 
 /** Contract limit on learner_text (SubmitTurnRequest.maxLength). */
 export const MAX_LEARNER_TEXT_LENGTH = 8000;
+/** Contract limit on a freeform topic (StartSessionRequest.topic.maxLength). */
+export const MAX_TOPIC_LENGTH = 200;
 /** Sessions end after this many accepted learner turns. */
 export const MAX_LEARNER_TURNS = 8;
+/** The version-controlled Machine Learning graph (ADR-0002). */
+export const BUILTIN_GRAPH_ID = "machine-learning";

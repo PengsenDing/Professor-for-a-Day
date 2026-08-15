@@ -61,6 +61,14 @@ class Settings(BaseSettings):
     judge_reasoning_effort: ReasoningEffort = "medium"
     student_reasoning_effort: ReasoningEffort = "low"
 
+    # Knowledge-graph generation (ADR-0004): rubric authoring and session-end
+    # graph summarization share one temperature/effort pair — both produce
+    # structured teaching material, warmer than the Judge but cooler than the
+    # Student's conversational voice.
+    graph_temperature: float = Field(default=0.3, ge=0.0, le=2.0)
+    graph_reasoning_effort: ReasoningEffort = "medium"
+    graph_max_new_concepts_per_session: int = Field(default=8, gt=0)
+
     log_level: str = "INFO"
 
 

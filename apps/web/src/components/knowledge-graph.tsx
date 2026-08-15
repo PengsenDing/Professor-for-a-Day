@@ -26,12 +26,15 @@ const KnowledgeGraph3D = dynamic(
  * selects the concept exactly as before; see knowledge-graph-3d.tsx.
  */
 export function KnowledgeGraph({
+  graphId,
   curriculum,
   mastery,
   selectedId,
   onSelect,
   className,
 }: {
+  /** Which knowledge graph is shown; scopes the saved ball arrangement. */
+  graphId: string;
   curriculum: Curriculum;
   mastery: Record<string, number>;
   selectedId: string | null;
@@ -40,6 +43,7 @@ export function KnowledgeGraph({
 }) {
   return (
     <KnowledgeGraph3D
+      graphId={graphId}
       curriculum={curriculum}
       mastery={mastery}
       selectedId={selectedId}

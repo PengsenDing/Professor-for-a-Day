@@ -1,8 +1,12 @@
-"""Fake adapters and repository for the session API tests (AC §5: no live providers)."""
+"""Fake adapters and repositories for the session API tests (AC §5: no live providers)."""
 
 import copy
+from datetime import UTC, datetime
 from typing import Any
 
+from pymongo.errors import PyMongoError
+
+from app.curriculum.rubrics import Rubric
 from app.services.evaluation import (
     DemonstratedPoint,
     IntroducedMisconception,
@@ -13,6 +17,7 @@ from app.services.exceptions import (
     SpeechSynthesisError,
     TranscriptionError,
 )
+from app.services.graph_summarizer import GraphExtraction
 
 EMPTY_EVALUATION = JudgeEvaluation(
     newly_demonstrated_points=[],
@@ -56,12 +61,27 @@ class FakeSessionRepository:
     async def ensure_indexes(self) -> None:
         pass
 
-    async def create(self, *, concept_id: str, mode: str, student_text: str) -> dict[str, Any]:
+    async def create(
+        self,
+        *,
+        concept_id: str,
+        concept_title: str,
+        mode: str,
+        student_text: str,
+        graph_id: str | None,
+        topic: str | None = None,
+        rubric: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         self._counter += 1
         session_id = f"fake-session-{self._counter}"
         document: dict[str, Any] = {
             "_id": session_id,
+            "graph_id": graph_id,
             "concept_id": concept_id,
+            "concept_title": concept_title,
+            "topic": topic,
+            "rubric": rubric,
+            "graph_update": None,
             "mode": mode,
             "status": "active",
             "end_reason": None,
@@ -110,6 +130,8 @@ class FakeSessionRepository:
         end_reason: str,
         final_percent: int,
         report: dict[str, Any],
+        graph_update: dict[str, Any] | None = None,
+        graph_id: str | None = None,
     ) -> dict[str, Any] | None:
         document = self.sessions.get(session_id)
         if document is None:
@@ -121,7 +143,10 @@ class FakeSessionRepository:
                 progress_percent=final_percent,
                 final_score=final_percent,
                 report=copy.deepcopy(report),
+                graph_update=copy.deepcopy(graph_update),
             )
+            if graph_id is not None:
+                document["graph_id"] = graph_id
         return copy.deepcopy(document)
 
 
@@ -204,6 +229,163 @@ class FakeStudent:
         if press is not None:
             return f"I still think: {press.summary}"
         return "Interesting — can you tell me more?"
+
+
+class FakeGraphRepository:
+    """In-memory mirror of `GraphRepository` semantics (versioning included)."""
+
+    def __init__(self) -> None:
+        self.graphs: dict[str, dict[str, Any]] = {}
+        self._counter = 0
+        self.fail_insert = False
+        self.fail_append = False
+
+    async def ensure_indexes(self) -> None:
+        pass
+
+    async def list_summaries(self) -> list[dict[str, Any]]:
+        return [
+            {
+                "_id": document["_id"],
+                "title": document["title"],
+                "concepts": [{"id": entry["id"]} for entry in document["concepts"]],
+                "created_at": document["created_at"],
+            }
+            for document in self.graphs.values()
+        ]
+
+    async def get(self, graph_id: str) -> dict[str, Any] | None:
+        document = self.graphs.get(graph_id)
+        return copy.deepcopy(document) if document else None
+
+    async def insert(
+        self,
+        *,
+        title: str,
+        concepts: list[dict[str, Any]],
+        edges: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        if self.fail_insert:
+            raise PyMongoError("scripted insert failure")
+        self._counter += 1
+        graph_id = f"fake-graph-{self._counter}"
+        document: dict[str, Any] = {
+            "_id": graph_id,
+            "title": title,
+            "version": 1,
+            "concepts": copy.deepcopy(concepts),
+            "edges": copy.deepcopy(edges),
+            "created_at": datetime.now(UTC),
+            "updated_at": datetime.now(UTC),
+        }
+        self.graphs[graph_id] = document
+        return copy.deepcopy(document)
+
+    async def append(
+        self,
+        graph_id: str,
+        *,
+        expected_version: int,
+        new_concepts: list[dict[str, Any]],
+        new_edges: list[dict[str, Any]],
+    ) -> bool:
+        if self.fail_append:
+            raise PyMongoError("scripted append failure")
+        document = self.graphs.get(graph_id)
+        if document is None or document["version"] != expected_version:
+            return False
+        document["concepts"].extend(copy.deepcopy(new_concepts))
+        document["edges"].extend(copy.deepcopy(new_edges))
+        document["version"] += 1
+        return True
+
+    async def delete(self, graph_id: str) -> bool:
+        return self.graphs.pop(graph_id, None) is not None
+
+    async def set_concept_rubric(
+        self, graph_id: str, concept_id: str, rubric: dict[str, Any]
+    ) -> bool:
+        document = self.graphs.get(graph_id)
+        if document is None:
+            return False
+        for entry in document["concepts"]:
+            if entry["id"] == concept_id and entry.get("rubric") is None:
+                entry["rubric"] = copy.deepcopy(rubric)
+                return True
+        return False
+
+
+def make_generated_rubric(concept_id: str) -> Rubric:
+    """A deterministic, fully valid rubric for any generated concept."""
+    return Rubric.model_validate(
+        {
+            "concept_id": concept_id,
+            "points": [
+                {
+                    "id": f"{concept_id}-p{index}",
+                    "label": f"Point {index} of {concept_id}",
+                    "description": f"Evidence criterion {index}.",
+                }
+                for index in range(1, 5)
+            ],
+            "misconceptions": [
+                {
+                    "id": f"{concept_id}-mc{index}",
+                    "summary": f"Mix-up {index} about {concept_id}.",
+                    "belief": "I believe the wrong thing.",
+                    "why_plausible": "It feels intuitive.",
+                    "fallback_line": "But wait, is that not how it works?",
+                    "correction": "State the correct mechanism explicitly.",
+                }
+                for index in range(1, 3)
+            ],
+            "probes": {
+                "beginner": ["What does this mean?"],
+                "confident": ["Surely it works like X, right?"],
+                "skeptic": ["Why would that hold in the edge case?"],
+            },
+        }
+    )
+
+
+class FakeRubricGenerator:
+    def __init__(self, call_log: list[str]) -> None:
+        self.call_log = call_log
+        self.calls: list[dict[str, Any]] = []
+        self.fail = False
+
+    async def generate(self, *, topic_title: str, concept_id: str) -> Rubric:
+        self.call_log.append("rubric_generator")
+        self.calls.append({"topic_title": topic_title, "concept_id": concept_id})
+        if self.fail:
+            raise GenerationError("scripted rubric generation failure")
+        return make_generated_rubric(concept_id)
+
+
+class FakeGraphSummarizer:
+    def __init__(self, call_log: list[str]) -> None:
+        self.call_log = call_log
+        self.calls: list[dict[str, Any]] = []
+        self.responses: list[GraphExtraction] = []
+        self.fail = False
+
+    def queue(self, *extractions: GraphExtraction) -> None:
+        self.responses.extend(extractions)
+
+    async def extract(self, *, transcript, taught_concept, existing) -> GraphExtraction:
+        self.call_log.append("graph_summarizer")
+        self.calls.append(
+            {
+                "transcript": list(transcript),
+                "taught_concept": taught_concept,
+                "existing": existing,
+            }
+        )
+        if self.fail:
+            raise GenerationError("scripted extraction failure")
+        if self.responses:
+            return self.responses.pop(0)
+        return GraphExtraction()
 
 
 class FakeSpeechService:

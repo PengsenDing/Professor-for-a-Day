@@ -11,6 +11,7 @@ import type {
   Curriculum,
   ErrorCode,
   ErrorEnvelope,
+  GraphList,
   SessionCreated,
   SessionFinished,
   StartSessionRequest,
@@ -19,8 +20,10 @@ import type {
   TurnEnvelope,
 } from "./types";
 import {
+  mockDeleteGraph,
   mockFinishSession,
-  mockGetCurriculum,
+  mockGetGraphCurriculum,
+  mockGetGraphs,
   mockGetTurnSpeech,
   mockStartSession,
   mockSubmitTurn,
@@ -62,6 +65,7 @@ async function request<T>(
       signal: controller.signal,
     });
     if (!res.ok) throw await errorFromResponse(res);
+    if (res.status === 204) return undefined as T;
     return (await res.json()) as T;
   } catch (err) {
     if (err instanceof ApiError) throw err;
@@ -82,10 +86,29 @@ function jsonInit(method: string, body?: unknown): RequestInit {
   };
 }
 
-/** GET /api/curriculum — the 15 Concepts and prerequisite edges. Never invokes an LLM. */
-export function getCurriculum(): Promise<Curriculum> {
-  if (IS_MOCK) return mockGetCurriculum();
-  return request<Curriculum>("/api/curriculum");
+/** GET /api/graphs — every knowledge graph, builtin first. Never invokes an LLM. */
+export function getGraphs(): Promise<GraphList> {
+  if (IS_MOCK) return mockGetGraphs();
+  return request<GraphList>("/api/graphs");
+}
+
+/** GET /api/graphs/{graph_id}/curriculum — one graph's concepts and edges. */
+export function getGraphCurriculum(graphId: string): Promise<Curriculum> {
+  if (IS_MOCK) return mockGetGraphCurriculum(graphId);
+  return request<Curriculum>(
+    `/api/graphs/${encodeURIComponent(graphId)}/curriculum`,
+  );
+}
+
+/**
+ * DELETE /api/graphs/{graph_id} — remove a user-created graph. The builtin
+ * graph is never deletable; past sessions and reports stay untouched.
+ */
+export function deleteGraph(graphId: string): Promise<void> {
+  if (IS_MOCK) return mockDeleteGraph(graphId);
+  return request<void>(`/api/graphs/${encodeURIComponent(graphId)}`, {
+    method: "DELETE",
+  });
 }
 
 /** POST /api/sessions — start a Teaching Session; returns the opening question (turn 0). */

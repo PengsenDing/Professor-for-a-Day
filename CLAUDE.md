@@ -19,8 +19,14 @@ AI Student asks -> learner explains -> Judge evaluates against the rubric
 Key product facts:
 
 - English-only, single anonymous learner, no accounts (see Out of Scope).
-- The Home screen shows a fixed **Knowledge Graph** of the 15 Concepts with directed
-  prerequisite edges. Edges recommend an order but never lock a node.
+- The landing page lists every **Knowledge Graph**: the builtin Machine Learning graph
+  (15 Concepts, version-controlled) plus user graphs created by teaching. Picking a
+  graph leads to its concept-select view; "start a new knowledge graph" leads to a
+  freeform topic session whose conversation is summarized into a new graph at session
+  end (ADR-0004). Prerequisite edges recommend an order but never lock a node.
+- User graphs are living: later sessions on them may append concepts/edges the
+  conversation surfaced (append-only, validated, acyclic). The builtin graph never
+  changes. User-graph concepts get rubrics generated on demand and cached in MongoDB.
 - A **Teaching Session** covers one Concept and one AI Student mode. It ends at 100%
   progress (`mastery`), when the learner finishes early (`learner_finished`), or after
   the eighth learner turn (`turn_limit`). Every exit path produces a **Teacher Report**.
@@ -53,6 +59,8 @@ This file is an orientation summary. When it disagrees with the documents below,
      version-controlled backend data; the LLM never adds, deletes, or rewires nodes).
    - 0003: speech is synthesized on fetch (no audio in JSON envelopes; clients fetch
      `audio/mpeg` per turn and cache the blob for replay).
+   - 0004: user knowledge graphs are LLM-drafted, application-validated, and
+     append-only; ADR-0002 continues to hold for the builtin graph.
 
 ## 3. Repository layout and technology
 
@@ -98,8 +106,11 @@ Defined in `packages/shared/openapi.yaml` — read it before touching any route.
 
 ```text
 GET  /health                                                # process + DB health, no LLM call
-GET  /api/curriculum                                        # 15 Concepts + prerequisite edges, no LLM call
-POST /api/sessions                                          # start a session -> opening question (turn 0)
+GET    /api/graphs                                          # all knowledge graphs (builtin first), no LLM call
+GET    /api/graphs/{graph_id}/curriculum                    # one graph's Concepts + edges, no LLM call
+DELETE /api/graphs/{graph_id}                               # delete a user graph; builtin -> 409 GRAPH_NOT_DELETABLE
+POST /api/sessions                                          # start a session -> opening question (turn 0);
+                                                            #   {graph_id, concept_id, mode} or freeform {topic, mode}
 POST /api/sessions/{session_id}/turns                       # submit one learner explanation
 POST /api/sessions/{session_id}/finish                      # finish early -> Teacher Report (idempotent)
 GET  /api/sessions/{session_id}/turns/{turn_number}/speech  # synthesize one AI Student reply (audio/mpeg)
@@ -124,7 +135,9 @@ Contract behaviors to preserve:
   Student, or the counters.
 - **Sessions end inside the turn envelope.** A turn that reaches 100%, or the eighth
   accepted turn, returns `status: "ended"` with a populated `report` in the same
-  response — no extra request.
+  response — no extra request. The ending envelope (and `SessionFinished`) also
+  carries a nullable `graph_update` describing the knowledge graph the session
+  created or grew; builtin-graph sessions always return null there.
 - **Speech is synthesized on fetch** (ADR-0003). JSON responses carry no audio. Turn 0
   is the opening question. Nothing is cached or persisted server-side; a muted client
   simply never calls the endpoint; synthesis failures affect only that endpoint.
@@ -199,10 +212,13 @@ standard, so scores stay comparable across modes.
 ## 8. Persistence
 
 - MongoDB stores anonymous Teaching Sessions and their ordered turns: session id,
-  Concept, mode, lifecycle status, turn count, final score when present, timestamps,
-  and the Teacher Report when present; each turn stores the learner transcript, input
-  mode, AI Student text, the Judge's structured evaluation, resulting progress, and a
-  timestamp — so score changes can be traced to evidence.
+  graph id, Concept, mode, lifecycle status, turn count, final score when present,
+  timestamps, and the Teacher Report when present; each turn stores the learner
+  transcript, input mode, AI Student text, the Judge's structured evaluation,
+  resulting progress, and a timestamp — so score changes can be traced to evidence.
+- MongoDB also stores user knowledge graphs (`knowledge_graphs`): title, version,
+  concepts (each with an optional cached generated rubric), and edges (ADR-0004).
+  Rubric internals never appear in any API response.
 - MongoDB never stores raw or generated audio, browser-local Mastery, credentials, or
   hidden provider payloads unnecessary for the learning record.
 - All database access goes through the repository boundary (`app/repositories/`).
@@ -228,6 +244,9 @@ JUDGE_TEMPERATURE=
 STUDENT_TEMPERATURE=
 JUDGE_REASONING_EFFORT=
 STUDENT_REASONING_EFFORT=
+GRAPH_TEMPERATURE=                    # rubric generation + graph summarization
+GRAPH_REASONING_EFFORT=
+GRAPH_MAX_NEW_CONCEPTS_PER_SESSION=   # default: 8
 ```
 
 ElevenLabs credentials likewise live server-side in environment configuration. Secrets
@@ -264,9 +283,11 @@ Follow `docs/mvp-spec.md` §Testing Decisions and `docs/backend-acceptance-crite
 
 ## 11. Out of scope for the MVP
 
-Accounts and authentication; multiple users or cross-device sync; topics beyond the 15
-curated ML Concepts; LLM-generated graph nodes or edges; a graph database or
-server-side Mastery storage; hard prerequisite locks; languages other than English;
+Accounts and authentication; multiple users or cross-device sync; LLM changes to the
+builtin ML graph (user graphs are LLM-drafted within the guardrails of ADR-0004); a
+graph database or server-side Mastery storage; hard prerequisite locks; graph
+management beyond deleting a user graph (renaming, editing, merging, export);
+languages other than English;
 voice selection or cloning; real-time full-duplex speech; persisting raw or generated
 audio; AI Student personalities beyond the three modes; mode-dependent scoring
 standards; sessions longer than eight learner turns; analytics, dashboards, social

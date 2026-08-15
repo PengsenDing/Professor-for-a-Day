@@ -4,9 +4,10 @@ from enum import StrEnum
 from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, StringConstraints, field_validator, model_validator
 
 from .curriculum import ConceptId, ConceptRef
+from .graphs import GraphId, GraphUpdate
 
 Percent = Annotated[int, Field(ge=0, le=100)]
 
@@ -44,12 +45,41 @@ class Progress(BaseModel):
 
 
 class StartSessionRequest(BaseModel):
-    concept_id: ConceptId
+    """Exactly one of (`graph_id` + `concept_id`) or `topic` must be provided."""
+
+    graph_id: GraphId | None = Field(
+        default=None,
+        description="Required together with `concept_id`; omit for `topic` sessions.",
+    )
+    concept_id: ConceptId | None = None
+    topic: (
+        Annotated[str, StringConstraints(min_length=1, max_length=200)] | None
+    ) = Field(
+        default=None,
+        description=(
+            "Free-text subject to teach. The backend generates a rubric for it "
+            "and, at session end, summarizes the conversation into a new "
+            "knowledge graph."
+        ),
+    )
     mode: Mode
+
+    @model_validator(mode="after")
+    def _exactly_one_shape(self) -> "StartSessionRequest":
+        concept_shape = self.graph_id is not None and self.concept_id is not None
+        topic_shape = self.topic is not None and self.topic.strip() != ""
+        if topic_shape and (self.graph_id is not None or self.concept_id is not None):
+            raise ValueError("Provide either graph_id + concept_id or topic, not both")
+        if not topic_shape and not concept_shape:
+            raise ValueError("Provide graph_id + concept_id, or a non-empty topic")
+        return self
 
 
 class SessionCreated(BaseModel):
     session_id: str
+    graph_id: GraphId | None = Field(
+        description="Null for a `topic` session until its graph is created at session end."
+    )
     concept: ConceptRef
     mode: Mode
     student_text: str = Field(
@@ -118,7 +148,9 @@ class TeacherReport(BaseModel):
         min_length=1,
         description="Exactly one concrete, actionable suggestion. Always present, even at 0%.",
     )
-    recommended_next_concept: ConceptRef
+    recommended_next_concept: ConceptRef | None = Field(
+        description="Null when the graph has no other concept to recommend."
+    )
     mastery_achieved: bool = Field(
         description=(
             "True if and only if final_percent is 100. Drives the accomplishment "
@@ -157,6 +189,13 @@ class TurnEnvelope(BaseModel):
             "Null while active; fully populated in the same envelope when the session ends."
         )
     )
+    graph_update: GraphUpdate | None = Field(
+        description=(
+            "Null while active, for builtin-graph sessions, and when graph "
+            "persistence failed. Populated on the ending turn of `topic` and "
+            "user-graph sessions. Idempotent retries replay the stored value."
+        )
+    )
 
 
 class SessionFinished(BaseModel):
@@ -165,3 +204,6 @@ class SessionFinished(BaseModel):
     end_reason: EndReason
     progress: Progress
     report: TeacherReport
+    graph_update: GraphUpdate | None = Field(
+        description="Same semantics as on `TurnEnvelope`."
+    )

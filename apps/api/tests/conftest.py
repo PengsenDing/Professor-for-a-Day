@@ -31,17 +31,33 @@ def harness():
     from app import dependencies
     from app.main import app
     from app.services import speech as speech_module
-    from tests.fakes import FakeJudge, FakeSessionRepository, FakeSpeechService, FakeStudent
+    from tests.fakes import (
+        FakeGraphRepository,
+        FakeGraphSummarizer,
+        FakeJudge,
+        FakeRubricGenerator,
+        FakeSessionRepository,
+        FakeSpeechService,
+        FakeStudent,
+    )
 
     call_log: list[str] = []
     repository = FakeSessionRepository()
+    graph_repository = FakeGraphRepository()
     judge = FakeJudge(call_log)
     student = FakeStudent(call_log)
+    rubric_generator = FakeRubricGenerator(call_log)
+    summarizer = FakeGraphSummarizer(call_log)
     speech = FakeSpeechService()
 
+    # The three graph leaves are faked; GraphService itself stays real, the way
+    # scoring stays real under FakeJudge.
     app.dependency_overrides[dependencies.get_session_repository] = lambda: repository
+    app.dependency_overrides[dependencies.get_graph_repository] = lambda: graph_repository
     app.dependency_overrides[dependencies.get_judge] = lambda: judge
     app.dependency_overrides[dependencies.get_student] = lambda: student
+    app.dependency_overrides[dependencies.get_rubric_generator] = lambda: rubric_generator
+    app.dependency_overrides[dependencies.get_graph_summarizer] = lambda: summarizer
     app.dependency_overrides[speech_module.get_speech_service] = lambda: speech
 
     try:
@@ -49,8 +65,11 @@ def harness():
             yield SimpleNamespace(
                 client=test_client,
                 repository=repository,
+                graph_repository=graph_repository,
                 judge=judge,
                 student=student,
+                rubric_generator=rubric_generator,
+                summarizer=summarizer,
                 speech=speech,
                 call_log=call_log,
             )
@@ -66,6 +85,7 @@ async def mongo_database() -> AsyncIterator:
     """
     from app.config import get_settings
     from app.db import MongoConnection
+    from app.repositories.graphs import COLLECTION_NAME as GRAPHS_COLLECTION
     from app.repositories.sessions import COLLECTION_NAME
 
     settings = get_settings()
@@ -79,4 +99,5 @@ async def mongo_database() -> AsyncIterator:
         yield mongo.database
     finally:
         await mongo.database.drop_collection(COLLECTION_NAME)
+        await mongo.database.drop_collection(GRAPHS_COLLECTION)
         await mongo.close()
