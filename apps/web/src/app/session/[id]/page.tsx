@@ -897,7 +897,7 @@ export default function SessionPage() {
             <p className="mt-1 text-right text-[11px] text-muted-foreground">
               {recording
                 ? "Recording… click the mic to stop and send · Esc to cancel"
-                : `${view.turns_remaining} turns left · Enter to send, or click the mic to talk`}
+                : "Enter to send, or click the mic to talk"}
             </p>
 
             {/* The three action spheres under the text window: Speak, the

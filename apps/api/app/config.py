@@ -50,7 +50,6 @@ class Settings(BaseSettings):
             "skeptic": self.elevenlabs_voice_id_skeptic,
         }.get(mode or "", self.elevenlabs_voice_id)
 
-    session_max_learner_turns: int = Field(default=8, gt=0)
     transcription_max_bytes: int = Field(default=15_000_000, gt=0)
 
     port: int = 8787

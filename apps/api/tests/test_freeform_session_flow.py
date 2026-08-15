@@ -137,17 +137,18 @@ def test_mastery_creates_a_graph_from_the_conversation(harness) -> None:
     assert stored["graph_id"] == update["graph_id"]
 
 
-def test_turn_limit_creates_a_graph_too(harness) -> None:
+def test_freeform_session_stays_active_past_eight_turns(harness) -> None:
+    """No turn limit: a freeform session below 100% keeps going and creates no
+    graph until it actually ends."""
     session = start_topic(harness)
-    harness.summarizer.queue(COMPILER_EXTRACTION)
 
     final = None
-    for _ in range(8):
+    for _ in range(9):
         final = submit(harness, session["session_id"]).json()
 
-    assert final["status"] == "ended"
-    assert final["end_reason"] == "turn_limit"
-    assert final["graph_update"]["created"] is True
+    assert final["status"] == "active"
+    assert final["graph_update"] is None
+    assert harness.graph_repository.graphs == {}
 
 
 def test_finish_creates_a_graph_too(harness) -> None:

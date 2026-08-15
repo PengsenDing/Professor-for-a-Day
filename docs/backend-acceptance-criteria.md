@@ -76,7 +76,9 @@ removed from the codebase; nothing in this document applies to them.
 - `mode` ∈ `beginner` | `confident` | `skeptic`
 - `input_mode` ∈ `text` | `voice`
 - `status` ∈ `active` | `ended`
-- `end_reason` ∈ `null` | `mastery` | `learner_finished` | `turn_limit`
+- `end_reason` ∈ `null` | `mastery` | `learner_finished` | `turn_limit` (legacy: no longer
+  produced — sessions have no turn budget — but sessions stored before the limit was removed
+  still carry it)
 
 ### 3.3 Speech transport
 
@@ -133,8 +135,8 @@ Superseded by the frozen contract (read them through the OpenAPI document):
   answers `503` with `{"detail": "The database is not available."}`.
 - **AC-CFG-5** — ElevenLabs voices are fixed server-side: one voice per AI Student mode,
   with `ELEVENLABS_VOICE_ID` as the fallback. No request parameter can select a voice.
-- **AC-CFG-6** — `SESSION_MAX_LEARNER_TURNS` defaults to `8` and is read from configuration
-  rather than hard-coded at a call site, so the limit is testable without patching internals.
+- **AC-CFG-6** — Removed: sessions no longer have a turn limit, so
+  `SESSION_MAX_LEARNER_TURNS` no longer exists.
 
 ### B. Curriculum catalog — `AC-CAT`
 
@@ -181,7 +183,7 @@ Superseded by the frozen contract (read them through the OpenAPI document):
 
 - **AC-SES-1** — `POST /api/sessions` with a valid `{concept_id, mode}` returns `201` with:
   `session_id`, `concept` (`id`, `title`), `mode`, `student_text`, `speech`, `progress.percent`
-  = `0`, `learner_turn_count` = `0`, `turns_remaining` = `8`, `status` = `"active"`,
+  = `0`, `learner_turn_count` = `0`, `status` = `"active"`,
   `active_misconception` = `null`.
 - **AC-SES-2** — `student_text` is a non-empty question produced by the AI Student role for
   the selected concept and mode. It is the first thing in the conversation; the learner does
@@ -214,7 +216,7 @@ Superseded by the frozen contract (read them through the OpenAPI document):
 - **AC-TRN-1** — `POST /api/sessions/{id}/turns` accepts `{learner_text, input_mode,
   client_turn_id}` and returns `200` with the turn envelope: `turn_number`, `student_text`,
   `speech`, `progress`, `newly_covered_points`, `active_misconception`, `learner_turn_count`,
-  `turns_remaining`, `status`, `end_reason`, and `report` (`null` while active).
+  `status`, `end_reason`, and `report` (`null` while active).
 - **AC-TRN-2** — The Judge runs **before** the AI Student, on every turn. A test with ordered
   fake adapters asserts the recorded call order is Judge-then-Student for each turn.
 - **AC-TRN-3** — The Judge receives the cumulative conversation and the current rubric state
@@ -227,9 +229,8 @@ Superseded by the frozen contract (read them through the OpenAPI document):
 - **AC-TRN-6** — Submitting a turn to a session whose `status` is `ended` returns `409` with a
   provider-neutral message, makes no provider call, and does not mutate the session.
 - **AC-TRN-7** — Submitting a turn to an unknown or malformed `session_id` returns `404`.
-- **AC-TRN-8** — `learner_turn_count` increments by exactly one per accepted turn, and
-  `turns_remaining` equals `8 - learner_turn_count`. The opening AI Student question is not
-  counted as a learner turn.
+- **AC-TRN-8** — `learner_turn_count` increments by exactly one per accepted turn. The
+  opening AI Student question is not counted as a learner turn.
 - **AC-TRN-9** — The turn is atomic from the client's perspective: either the envelope is
   returned **and** the turn is persisted with its evaluation and resulting progress, or an
   error is returned and no turn is persisted. A partial state where the Judge ran but the turn
@@ -306,9 +307,9 @@ Superseded by the frozen contract (read them through the OpenAPI document):
 - **AC-END-1** — When a turn takes progress to `100`, that same turn envelope returns
   `status: "ended"`, `end_reason: "mastery"`, and a fully populated `report`. No extra request
   is required.
-- **AC-END-2** — After the eighth accepted learner turn, the envelope returns
-  `status: "ended"`, `end_reason: "turn_limit"`, and a `report`, regardless of progress. A
-  ninth submission returns `409`.
+- **AC-END-2** — There is no turn limit: a session below `100` stays `active` no matter how
+  many turns are accepted. Only mastery (AC-END-1) or a manual finish (AC-END-3) ends a
+  session.
 - **AC-END-3** — `POST /api/sessions/{id}/finish` on an active session returns `200` with
   `status: "ended"`, `end_reason: "learner_finished"`, the final progress, and a `report` —
   including when progress is `0`.
@@ -527,8 +528,8 @@ A single end-to-end backend test, using fakes, must pass:
 4. `POST /turns` with that transcript, `input_mode: "voice"` → progress rises, a misconception
    becomes active, `learner_turn_count = 1`.
 5. Retry the same `client_turn_id` → identical envelope, still one persisted turn.
-6. Further `POST /turns` covering the remaining rubric points and resolving the misconception,
-   within eight turns → final envelope has `progress.percent = 100`, `status = "ended"`,
+6. Further `POST /turns` covering the remaining rubric points and resolving the misconception
+   → final envelope has `progress.percent = 100`, `status = "ended"`,
    `end_reason = "mastery"`, `report.mastery_achieved = true`.
 7. Read the session back from the repository → ordered turns, per-turn Judge evaluations,
    monotonic progress values, stored report, and no audio anywhere in the documents.

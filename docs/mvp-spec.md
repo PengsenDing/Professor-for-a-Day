@@ -16,7 +16,7 @@ Build an English-language, single-learner hackathon experience focused on 15 cur
 
 The AI Student starts the session with a question suited to the concept and selected mode. The learner teaches through text or push-to-talk voice input and may switch input mode at any turn. ElevenLabs transcribes voice input. A hidden Judge evaluates each submitted explanation against a stable, pre-authored Concept Rubric. The Judge identifies demonstrated rubric points, corrected or unresolved misconceptions, and the best next probe. A separate AI Student call then produces the next question or misunderstanding. Every AI Student reply remains visible as text and is also spoken through ElevenLabs, using one fixed server-configured voice per AI Student mode.
 
-The learner sees a non-decreasing session progress bar. A concept reaches 100% only after every required rubric point has been demonstrated and the required misconception challenge has been resolved. At 100%, the interface plays an accomplishment animation. A session also may end when the learner chooses Finish or after eight learner turns. Every ending produces a Teacher Report and updates the browser-local mastery state when the new score exceeds the learner's previous best. Anonymous conversations and Judge evaluations are stored in MongoDB, while raw recordings are discarded after transcription.
+The learner sees a non-decreasing session progress bar. A concept reaches 100% only after every required rubric point has been demonstrated and the required misconception challenge has been resolved. At 100%, the interface plays an accomplishment animation. A session also may end when the learner chooses Finish; there is no turn limit. Every ending produces a Teacher Report and updates the browser-local mastery state when the new score exceeds the learner's previous best. Anonymous conversations and Judge evaluations are stored in MongoDB, while raw recordings are discarded after transcription.
 
 ## User Stories
 
@@ -58,7 +58,7 @@ The learner sees a non-decreasing session progress bar. A concept reaches 100% o
 36. As a learner, I want to see the current turn count, so that I know how much of the session remains.
 37. As a learner, I want a session to finish automatically at 100%, so that successful completion has a clear endpoint.
 38. As a learner, I want to finish a session early, so that I can leave without abandoning the result.
-39. As a learner, I want sessions limited to eight teaching turns, so that the exercise remains short and predictable.
+39. As a learner, I want to keep teaching for as many turns as I need, so that a session is never cut off before I am done.
 40. As a learner, I want a Teacher Report even when I stop below 100%, so that an incomplete attempt still gives useful feedback.
 41. As a learner, I want the report to show my final percentage, so that the session outcome is clear.
 42. As a learner, I want the report to list what I explained well, so that successful parts of my explanation are reinforced.
@@ -119,7 +119,7 @@ The learner sees a non-decreasing session progress bar. A concept reaches 100% o
 - Beginner asks foundational clarification questions and surfaces simple mistakes.
 - Confident has partial understanding and asserts plausible but incorrect conclusions.
 - Skeptic challenges causal claims, assumptions, transfer, counterexamples, and edge cases.
-- The session ends at 100%, when the learner selects Finish Session, or immediately after the eighth learner turn. Every exit path generates a Teacher Report.
+- The session ends at 100% or when the learner selects Finish Session; there is no turn limit. Every exit path generates a Teacher Report.
 
 ### Hybrid input and mandatory voice output
 
@@ -167,7 +167,7 @@ The learner sees a non-decreasing session progress bar. A concept reaches 100% o
 - The AI Student asks the first, mode-appropriate question and speaks it using the default ElevenLabs voice.
 - The learner answers through voice; ElevenLabs transcribes the answer; the transcript is submitted as the learner's explanation and appears in the conversation.
 - The Judge evaluates the answer, the progress bar advances, and the AI Student speaks a targeted misconception or follow-up.
-- The learner corrects the misconception and covers every remaining rubric point within eight turns.
+- The learner corrects the misconception and covers every remaining rubric point.
 - Progress reaches 100%, the accomplishment animation plays, and the Teacher Report is shown.
 - Returning to the Knowledge Graph shows Gradient Descent as Accomplished.
 - The anonymous Teaching Session, turns, evaluations, and report can be read back from MongoDB, with no raw audio stored.
@@ -176,7 +176,7 @@ The learner sees a non-decreasing session progress bar. A concept reaches 100% o
 
 - Tests assert externally observable behavior and stable contracts rather than exact prompts, private helper calls, or verbatim model wording.
 - The primary automated seam is the session API boundary. A test starts a session, submits learner transcripts, finishes the session, and reads the stored result using fake DeutschlandGPT and ElevenLabs adapters plus a test repository.
-- Session API tests verify the opening question, ordered Judge-before-Student loop, structured progress, monotonic coverage, misconception completion gate, eight-turn limit, manual finish, report production, safe provider failures, and persisted turn evidence.
+- Session API tests verify the opening question, ordered Judge-before-Student loop, structured progress, monotonic coverage, misconception completion gate, unlimited turns, manual finish, report production, safe provider failures, and persisted turn evidence.
 - Existing FastAPI route tests with dependency overrides are the prior art for exercising HTTP behavior without live infrastructure.
 - Existing conversation repository tests are the prior art for validating persistence separately against a real test MongoDB when one is available.
 - One browser-level golden-path test covers Knowledge Graph selection, the AI Student's opening question, a typed fallback teaching loop, 100% completion, animation state, Teacher Report, and updated local Mastery.
@@ -197,7 +197,6 @@ The learner sees a non-decreasing session progress bar. A concept reaches 100% o
 - Real-time full-duplex speech, interruption, wake-word detection, and continuous microphone streaming.
 - Persisting raw recordings or generated audio.
 - Additional AI Student personalities beyond Beginner, Confident, and Skeptic.
-- Sessions longer than eight learner turns.
 - Production analytics, educator dashboards, classroom management, social sharing, leaderboards, and achievements beyond the single completion animation.
 - Automated rubric authoring or curriculum-management tooling.
 - Replacing DeutschlandGPT, ElevenLabs, MongoDB, or the existing FastAPI and LangChain backend during the MVP.

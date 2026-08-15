@@ -11,10 +11,10 @@ function envelope(overrides: Partial<TurnEnvelope>): TurnEnvelope {
     newly_covered_points: [],
     active_misconception: null,
     learner_turn_count: 3,
-    turns_remaining: 5,
     status: "active",
     end_reason: null,
     report: null,
+    graph_update: null,
     ...overrides,
   };
 }

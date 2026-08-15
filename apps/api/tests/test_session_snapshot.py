@@ -42,7 +42,6 @@ def test_active_snapshot_matches_the_last_envelope_without_provider_calls(harnes
     assert body["progress"] == envelope["progress"]
     assert body["active_misconception"] == envelope["active_misconception"]
     assert body["learner_turn_count"] == envelope["learner_turn_count"]
-    assert body["turns_remaining"] == envelope["turns_remaining"]
     assert body["status"] == "active"
     assert body["end_reason"] is None
     assert body["report"] is None

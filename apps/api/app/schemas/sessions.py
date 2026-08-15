@@ -32,6 +32,8 @@ class SessionStatus(StrEnum):
 class EndReason(StrEnum):
     mastery = "mastery"
     learner_finished = "learner_finished"
+    # Legacy: sessions no longer have a turn budget, but sessions stored before
+    # the limit was removed still carry this end reason.
     turn_limit = "turn_limit"
 
 
@@ -89,9 +91,6 @@ class SessionCreated(BaseModel):
     )
     progress: Progress
     learner_turn_count: Literal[0]
-    turns_remaining: Annotated[int, Field(ge=0)] = Field(
-        description="The session's configured turn budget (8 by default)."
-    )
     status: Literal["active"]
     active_misconception: None
 
@@ -204,12 +203,9 @@ class TurnEnvelope(BaseModel):
     )
     active_misconception: ActiveMisconception | None
     learner_turn_count: Annotated[int, Field(ge=1)]
-    turns_remaining: Annotated[int, Field(ge=0)]
     status: SessionStatus
     end_reason: EndReason | None = Field(
-        description=(
-            "Null while active. `mastery` or `turn_limit` when this turn ended the session."
-        )
+        description="Null while active. `mastery` when this turn ended the session."
     )
     report: TeacherReport | None = Field(
         description=(
@@ -277,7 +273,6 @@ class SessionSnapshot(BaseModel):
     progress: Progress
     active_misconception: ActiveMisconception | None
     learner_turn_count: Annotated[int, Field(ge=0)]
-    turns_remaining: Annotated[int, Field(ge=0)]
     status: SessionStatus
     end_reason: EndReason | None = Field(description="Null while active.")
     report: TeacherReport | None = Field(

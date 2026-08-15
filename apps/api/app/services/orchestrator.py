@@ -62,13 +62,11 @@ class SessionOrchestrator:
         judge: JudgeAdapter,
         student: StudentAdapter,
         graph_service: GraphService,
-        max_learner_turns: int,
     ) -> None:
         self._repository = repository
         self._judge = judge
         self._student = student
         self._graphs = graph_service
-        self._max_turns = max_learner_turns
 
     # -- session start ------------------------------------------------------
 
@@ -111,7 +109,6 @@ class SessionOrchestrator:
             student_text=student_text,
             progress=Progress(percent=0),
             learner_turn_count=0,
-            turns_remaining=self._max_turns,
             status="active",
             active_misconception=None,
         )
@@ -192,7 +189,8 @@ class SessionOrchestrator:
 
             turn_number = document["learner_turn_count"] + 1
             percent = max(result.percent, document["progress_percent"])  # monotonic
-            ended, end_reason = self._exit_state(percent, turn_number)
+            ended = percent == 100
+            end_reason = EndReason.mastery if ended else None
 
             # The mirror mechanism (A): the Judge may flag which tracked
             # misconception the learner's own explanation invites. It is advice
@@ -375,7 +373,6 @@ class SessionOrchestrator:
                 newly_covered_points=newly_covered,
                 active_misconception=active,
                 learner_turn_count=turn_number,
-                turns_remaining=self._max_turns - turn_number,
                 status=SessionStatus.ended if ended else SessionStatus.active,
                 end_reason=end_reason,
                 report=report,
@@ -466,7 +463,6 @@ class SessionOrchestrator:
             progress=Progress(percent=document["progress_percent"]),
             active_misconception=_active_misconception(rubric, state),
             learner_turn_count=document["learner_turn_count"],
-            turns_remaining=max(self._max_turns - document["learner_turn_count"], 0),
             status=SessionStatus(document["status"]),
             end_reason=EndReason(document["end_reason"]) if document["end_reason"] else None,
             report=TeacherReport.model_validate(report) if report else None,
@@ -597,13 +593,6 @@ class SessionOrchestrator:
                 return misconception
         return None
 
-    def _exit_state(self, percent: int, turn_number: int) -> tuple[bool, EndReason | None]:
-        if percent == 100:
-            return True, EndReason.mastery
-        if turn_number >= self._max_turns:
-            return True, EndReason.turn_limit
-        return False, None
-
     def _envelope_from_stored_turn(
         self, document: dict[str, Any], turn: dict[str, Any]
     ) -> TurnEnvelope:
@@ -625,7 +614,6 @@ class SessionOrchestrator:
                 else None
             ),
             learner_turn_count=turn["turn_number"],
-            turns_remaining=self._max_turns - turn["turn_number"],
             status=SessionStatus(turn["status_after"]),
             end_reason=(
                 EndReason(turn["end_reason_after"]) if turn["end_reason_after"] else None

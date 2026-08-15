@@ -2,7 +2,7 @@ openapi: 3.1.0
 
 info:
   title: Professor-for-a-Day Product API
-  version: 0.1.0
+  version: 0.2.0
   description: |
     Contract-first API for the Professor-for-a-Day MVP.
 
@@ -244,7 +244,6 @@ paths:
                 student_text: "I read that gradient descent just tries random parameter values until the loss looks small. That's basically it, right?"
                 progress: { percent: 0 }
                 learner_turn_count: 0
-                turns_remaining: 8
                 status: active
                 active_misconception: null
         "422":
@@ -309,7 +308,6 @@ paths:
                   id: gd-mc-1
                   summary: "Believes the largest possible step size always converges fastest."
                 learner_turn_count: 1
-                turns_remaining: 7
                 status: active
                 end_reason: null
                 report: null
@@ -337,9 +335,10 @@ paths:
         Retries with the same `client_turn_id` return the original envelope
         without re-running the Judge, the AI Student, or the counters.
 
-        A turn that reaches 100%, or the eighth accepted turn, ends the session
-        in the same envelope (`status: "ended"` with a populated `report`); no
-        extra request is needed.
+        A turn that reaches 100% ends the session in the same envelope
+        (`status: "ended"` with a populated `report`); no extra request is
+        needed. There is no turn limit: a session stays active until mastery
+        or until the learner finishes it.
       parameters:
         - $ref: "#/components/parameters/SessionId"
       requestBody:
@@ -374,7 +373,6 @@ paths:
                       id: gd-mc-1
                       summary: "Believes the largest possible step size always converges fastest."
                     learner_turn_count: 1
-                    turns_remaining: 7
                     status: active
                     end_reason: null
                     report: null
@@ -390,7 +388,6 @@ paths:
                       - { id: gd-4, label: "Iterates until convergence" }
                     active_misconception: null
                     learner_turn_count: 3
-                    turns_remaining: 5
                     status: ended
                     end_reason: mastery
                     report:
@@ -410,25 +407,26 @@ paths:
                   summary: A freeform session ended and created a knowledge graph
                   value:
                     turn_number: 8
-                    learner_transcript: "So to recap: a compiler front end lexes and parses source into an AST before any optimization happens."
-                    student_text: "Got it — the tree comes first, optimizations later. Thanks, teacher!"
-                    progress: { percent: 74 }
-                    newly_covered_points: []
+                    learner_transcript: "So to recap: a compiler front end lexes and parses source into an AST before any optimization happens — and optimizations run on the intermediate representation afterwards."
+                    student_text: "Ohh — I think I actually get it now. Thanks for teaching me!"
+                    progress: { percent: 100 }
+                    newly_covered_points:
+                      - { id: compiler-stages, label: "Orders the compiler stages correctly" }
                     active_misconception: null
                     learner_turn_count: 8
-                    turns_remaining: 0
                     status: ended
-                    end_reason: turn_limit
+                    end_reason: mastery
                     report:
-                      final_percent: 74
+                      final_percent: 100
                       explained_well:
                         - "Distinguished lexing from parsing."
-                      misconceptions_corrected: []
-                      gaps_and_accidental_implications:
-                        - "Implied optimization happens during parsing."
+                        - "Placed optimization after the front end, on the intermediate representation."
+                      misconceptions_corrected:
+                        - "Optimization does not happen during parsing."
+                      gaps_and_accidental_implications: []
                       improvement_suggestion: "Walk through one source line end to end, naming each compiler stage as it transforms the code."
                       recommended_next_concept: null
-                      mastery_achieved: false
+                      mastery_achieved: true
                     graph_update:
                       graph_id: 66bcd1f2a9c4e35d8f01a2b3
                       graph_title: Compilers
@@ -797,6 +795,9 @@ components:
     EndReason:
       type: string
       enum: [mastery, learner_finished, turn_limit]
+      description: |
+        `turn_limit` is legacy: sessions no longer have a turn budget, but
+        sessions stored before the limit was removed still carry it.
 
     Progress:
       type: object
@@ -849,7 +850,6 @@ components:
         - student_text
         - progress
         - learner_turn_count
-        - turns_remaining
         - status
         - active_misconception
       properties:
@@ -873,10 +873,6 @@ components:
         learner_turn_count:
           type: integer
           const: 0
-        turns_remaining:
-          type: integer
-          minimum: 0
-          description: The session's configured turn budget (8 by default).
         status:
           type: string
           const: active
@@ -930,7 +926,6 @@ components:
         - newly_covered_points
         - active_misconception
         - learner_turn_count
-        - turns_remaining
         - status
         - end_reason
         - report
@@ -960,16 +955,13 @@ components:
         learner_turn_count:
           type: integer
           minimum: 1
-        turns_remaining:
-          type: integer
-          minimum: 0
         status:
           $ref: "#/components/schemas/SessionStatus"
         end_reason:
           anyOf:
             - $ref: "#/components/schemas/EndReason"
             - type: "null"
-          description: Null while active. `mastery` or `turn_limit` when this turn ended the session.
+          description: Null while active. `mastery` when this turn ended the session.
         report:
           anyOf:
             - $ref: "#/components/schemas/TeacherReport"
@@ -1044,7 +1036,6 @@ components:
         - progress
         - active_misconception
         - learner_turn_count
-        - turns_remaining
         - status
         - end_reason
         - report
@@ -1078,9 +1069,6 @@ components:
             - $ref: "#/components/schemas/ActiveMisconception"
             - type: "null"
         learner_turn_count:
-          type: integer
-          minimum: 0
-        turns_remaining:
           type: integer
           minimum: 0
         status:

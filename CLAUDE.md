@@ -28,8 +28,9 @@ Key product facts:
   conversation surfaced (append-only, validated, acyclic). The builtin graph never
   changes. User-graph concepts get rubrics generated on demand and cached in MongoDB.
 - A **Teaching Session** covers one Concept and one AI Student mode. It ends at 100%
-  progress (`mastery`), when the learner finishes early (`learner_finished`), or after
-  the eighth learner turn (`turn_limit`). Every exit path produces a **Teacher Report**.
+  progress (`mastery`) or when the learner finishes early (`learner_finished`); there
+  is no turn limit. Every exit path produces a **Teacher Report**. (`turn_limit` is a
+  legacy end reason kept only for sessions stored before the limit was removed.)
 - **Session Progress** is derived from confirmed rubric coverage, is monotonic within a
   session, and is capped at 99 until the misconception challenge posed during the
   session has been resolved (the "misconception gate").
@@ -141,9 +142,9 @@ Contract behaviors to preserve:
 - **Turns are idempotent** via a client-generated `client_turn_id` (UUID). Retries with
   the same id return the original envelope without re-running the Judge, the AI
   Student, or the counters.
-- **Sessions end inside the turn envelope.** A turn that reaches 100%, or the eighth
-  accepted turn, returns `status: "ended"` with a populated `report` in the same
-  response — no extra request. The ending envelope (and `SessionFinished`) also
+- **Sessions end inside the turn envelope.** A turn that reaches 100% returns
+  `status: "ended"` with a populated `report` in the same response — no extra
+  request. The ending envelope (and `SessionFinished`) also
   carries a nullable `graph_update` describing the knowledge graph the session
   created or grew; builtin-graph sessions always return null there.
 - **Speech is synthesized on fetch** (ADR-0003). JSON responses carry no audio. Turn 0
@@ -157,8 +158,8 @@ Contract behaviors to preserve:
 Response shapes (`TurnEnvelope`, `SessionCreated`, `SessionFinished`, `TeacherReport`,
 `Progress`, `ActiveMisconception`, `RubricPointRef`, …) are owned by the OpenAPI
 document. Notable fields: the envelope carries `progress.percent`, per-turn
-`newly_covered_points`, the learner-safe `active_misconception`, `learner_turn_count` /
-`turns_remaining`, `status`, `end_reason`, and the `report`. The `TeacherReport`
+`newly_covered_points`, the learner-safe `active_misconception`, `learner_turn_count`,
+`status`, `end_reason`, and the `report`. The `TeacherReport`
 contains `final_percent` (equal to the session's final computed progress, never
 recomputed), `explained_well`, `evidence` (why each point scored: per confirmed point,
 the learner's own words when the Judge's evidence was a verbatim quote, else no quote),
@@ -273,8 +274,8 @@ Follow `docs/mvp-spec.md` §Testing Decisions and `docs/backend-acceptance-crite
   learner transcripts, finish, and read back the stored result using fake
   DeutschlandGPT and ElevenLabs adapters plus a test repository.
 - Session API tests must cover: the opening question, the ordered Judge-before-Student
-  loop, structured progress, monotonic coverage, the misconception completion gate, the
-  eight-turn limit, manual finish, report production on every exit path, safe
+  loop, structured progress, monotonic coverage, the misconception completion gate,
+  unlimited turns, manual finish, report production on every exit path, safe
   provider-neutral failures, idempotent turn retries, and persisted turn evidence.
 - Existing FastAPI route tests with dependency overrides (`apps/api/tests/`) are the
   prior art for exercising HTTP behavior without live infrastructure; the conversation
@@ -300,6 +301,6 @@ graph database or server-side Mastery storage; hard prerequisite locks; graph
 management beyond deleting a user graph (renaming, editing, merging, export);
 languages other than English;
 voice selection or cloning; real-time full-duplex speech; persisting raw or generated
-audio; AI Student personalities beyond the three modes; sessions longer than eight learner turns; analytics, dashboards, social
+audio; AI Student personalities beyond the three modes; analytics, dashboards, social
 features, leaderboards; automated rubric authoring. Do not implement any of these
 unless explicitly requested.

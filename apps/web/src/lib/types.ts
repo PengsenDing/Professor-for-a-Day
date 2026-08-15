@@ -8,6 +8,8 @@
 export type Mode = "beginner" | "confident" | "skeptic";
 export type InputMode = "text" | "voice";
 export type SessionStatus = "active" | "ended";
+// "turn_limit" is legacy: sessions no longer have a turn budget, but sessions
+// stored before the limit was removed still carry it.
 export type EndReason = "mastery" | "learner_finished" | "turn_limit";
 
 export interface Concept {
@@ -90,7 +92,6 @@ export interface SessionCreated {
   student_text: string;
   progress: Progress;
   learner_turn_count: 0;
-  turns_remaining: 8;
   status: "active";
   active_misconception: null;
 }
@@ -110,7 +111,6 @@ export interface TurnEnvelope {
   newly_covered_points: RubricPointRef[];
   active_misconception: ActiveMisconception | null;
   learner_turn_count: number;
-  turns_remaining: number;
   status: SessionStatus;
   end_reason: EndReason | null;
   report: TeacherReport | null;
@@ -141,7 +141,6 @@ export interface SessionSnapshot {
   progress: Progress;
   active_misconception: ActiveMisconception | null;
   learner_turn_count: number;
-  turns_remaining: number;
   status: SessionStatus;
   end_reason: EndReason | null;
   report: TeacherReport | null;
@@ -243,7 +242,6 @@ export interface StoredSession {
   messages: ChatMessage[];
   progress: Progress;
   learner_turn_count: number;
-  turns_remaining: number;
   status: SessionStatus;
   end_reason: EndReason | null;
   active_misconception: ActiveMisconception | null;
@@ -297,7 +295,5 @@ export const MODE_BY_STUDENT_ID: Record<string, Mode> = Object.fromEntries(
 export const MAX_LEARNER_TEXT_LENGTH = 8000;
 /** Contract limit on a freeform topic (StartSessionRequest.topic.maxLength). */
 export const MAX_TOPIC_LENGTH = 200;
-/** Sessions end after this many accepted learner turns. */
-export const MAX_LEARNER_TURNS = 8;
 /** The version-controlled Machine Learning graph (ADR-0002). */
 export const BUILTIN_GRAPH_ID = "machine-learning";

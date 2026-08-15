@@ -43,7 +43,6 @@ def test_start_session_returns_opening_question_at_zero(harness) -> None:
 
     assert body["progress"] == {"percent": 0}
     assert body["learner_turn_count"] == 0
-    assert body["turns_remaining"] == 8
     assert body["status"] == "active"
     assert body["active_misconception"] is None
     assert body["student_text"]
@@ -275,7 +274,6 @@ def test_turn_envelope_reports_new_points_and_progress(harness) -> None:
 
     assert envelope["turn_number"] == 1
     assert envelope["learner_turn_count"] == 1
-    assert envelope["turns_remaining"] == 7  # AC-TRN-8
     assert envelope["progress"]["percent"] == 40  # 2 of 5 points
     assert {point["id"] for point in envelope["newly_covered_points"]} == {
         rubric.points[0].id,
@@ -309,18 +307,17 @@ def test_identical_progress_across_modes_for_one_transcript(harness) -> None:
 # -- T10/T12: exits ---------------------------------------------------------------
 
 
-def test_turn_limit_ends_the_session_with_a_report(harness) -> None:
+def test_sessions_have_no_turn_limit(harness) -> None:
+    """Sessions stay active indefinitely below 100%; only mastery or a manual
+    finish ends them (the former eight-turn limit is removed)."""
     session = start(harness)
-    for _turn in range(8):
+    for turn in range(1, 10):
         envelope = submit(harness, session["session_id"]).json()
+        assert envelope["learner_turn_count"] == turn
 
-    assert envelope["status"] == "ended"
-    assert envelope["end_reason"] == "turn_limit"  # AC-END-2
-    assert envelope["report"] is not None
-    assert envelope["turns_remaining"] == 0
-
-    ninth = submit(harness, session["session_id"])
-    assert ninth.status_code == 409
+    assert envelope["status"] == "active"
+    assert envelope["end_reason"] is None
+    assert envelope["report"] is None
 
 
 def test_mastery_ends_in_the_same_envelope(harness) -> None:

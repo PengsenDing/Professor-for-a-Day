@@ -27,7 +27,6 @@ import type {
 import {
   BUILTIN_GRAPH_ID,
   MAX_LEARNER_TEXT_LENGTH,
-  MAX_LEARNER_TURNS,
   MAX_TOPIC_LENGTH,
   MODES,
 } from "./types";
@@ -533,7 +532,6 @@ export async function mockStartSession(req: StartSessionRequest): Promise<Sessio
     student_text: openingQuestion(concept.id, concept.title, req.mode),
     progress: { percent: 0 },
     learner_turn_count: 0,
-    turns_remaining: 8,
     status: "active",
     active_misconception: null,
   };
@@ -570,7 +568,6 @@ export async function mockGetSession(sessionId: string): Promise<SessionSnapshot
         ? rubric.misconception
         : null,
     learner_turn_count: session.learner_turn_count,
-    turns_remaining: Math.max(MAX_LEARNER_TURNS - session.learner_turn_count, 0),
     status: session.status,
     end_reason: session.end_reason,
     report: session.report,
@@ -658,9 +655,6 @@ export async function mockSubmitTurn(
     session.status = "ended";
     session.end_reason = "mastery";
     studentText = masteryText(session);
-  } else if (session.learner_turn_count >= MAX_LEARNER_TURNS) {
-    session.status = "ended";
-    session.end_reason = "turn_limit";
   }
   if (session.status === "ended") {
     session.report = buildReport(session);
@@ -681,7 +675,6 @@ export async function mockSubmitTurn(
         ? rubric.misconception
         : null,
     learner_turn_count: session.learner_turn_count,
-    turns_remaining: MAX_LEARNER_TURNS - session.learner_turn_count,
     status: session.status,
     end_reason: session.end_reason,
     report: session.report,

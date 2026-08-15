@@ -85,7 +85,6 @@ def get_orchestrator(
         judge=judge,
         student=student,
         graph_service=graph_service,
-        max_learner_turns=get_settings().session_max_learner_turns,
     )
 
 
