@@ -30,6 +30,7 @@ COMPARED_COMPONENTS = [
     "TurnEnvelope",
     "SnapshotTurn",
     "SessionSnapshot",
+    "DemonstratedEvidence",
     "TeacherReport",
     "SessionFinished",
     "Transcription",

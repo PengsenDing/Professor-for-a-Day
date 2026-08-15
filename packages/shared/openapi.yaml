@@ -862,6 +862,25 @@ components:
           format: date-time
           description: When the session was started.
 
+    DemonstratedEvidence:
+      type: object
+      required: [point, quote, turn_number]
+      properties:
+        point:
+          $ref: "#/components/schemas/RubricPointRef"
+        quote:
+          anyOf:
+            - type: string
+            - type: "null"
+          description: |
+            The learner's own words that demonstrated the point — surfaced only
+            when the Judge's recorded evidence is a verbatim substring of that
+            turn's submission; null otherwise. Never Judge or rubric text.
+        turn_number:
+          type: integer
+          minimum: 1
+          description: The learner turn in which the point was demonstrated.
+
     TeacherReport:
       type: object
       required:
@@ -882,6 +901,15 @@ components:
           type: array
           items: { type: string }
           description: Grounded in this session's Judge evaluations only. May be empty.
+        evidence:
+          type: array
+          description: |
+            Why each point was scored: one entry per confirmed rubric point, in
+            rubric order, citing the learner's own words where available. Not
+            required so reports stored before this field existed stay valid;
+            when absent, treat as empty.
+          items:
+            $ref: "#/components/schemas/DemonstratedEvidence"
         misconceptions_corrected:
           type: array
           items: { type: string }

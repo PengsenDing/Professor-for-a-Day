@@ -34,9 +34,10 @@ from ..schemas import (
     TeacherReport,
     TurnEnvelope,
 )
+from .evaluation import DemonstratedPoint
 from .exceptions import GenerationError
 from .judge import JudgeAdapter
-from .report import build_report
+from .report import EvidenceSource, build_report
 from .scoring import ScoringState, apply_evaluation, pose_misconception
 from .student import StudentAdapter
 
@@ -231,6 +232,14 @@ class SessionOrchestrator:
                     concept_id=document["concept_id"],
                     state=state_after,
                     final_percent=percent,
+                    evidence_sources=[
+                        *_evidence_sources_from_document(document),
+                        EvidenceSource(
+                            turn_number,
+                            request.learner_text,
+                            evaluation.newly_demonstrated_points,
+                        ),
+                    ],
                 )
                 if ended
                 else None
@@ -330,6 +339,7 @@ class SessionOrchestrator:
                 concept_id=document["concept_id"],
                 state=state,
                 final_percent=percent,
+                evidence_sources=_evidence_sources_from_document(document),
             )
             updated = await self._repository.finish(
                 session_id,
@@ -496,6 +506,21 @@ def _state_from_document(document: dict[str, Any]) -> ScoringState:
             document["introduced_misconception_summaries"]
         ),
     )
+
+
+def _evidence_sources_from_document(document: dict[str, Any]) -> list[EvidenceSource]:
+    """Each stored turn's demonstrated points, for the report's evidence trail."""
+    return [
+        EvidenceSource(
+            turn["turn_number"],
+            turn["learner_text"],
+            [
+                DemonstratedPoint.model_validate(point)
+                for point in turn["evaluation"].get("newly_demonstrated_points", [])
+            ],
+        )
+        for turn in document["turns"]
+    ]
 
 
 def _transcript_from_document(document: dict[str, Any]) -> list[tuple[str, str]]:

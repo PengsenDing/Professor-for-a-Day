@@ -147,9 +147,11 @@ document. Notable fields: the envelope carries `progress.percent`, per-turn
 `newly_covered_points`, the learner-safe `active_misconception`, `learner_turn_count` /
 `turns_remaining`, `status`, `end_reason`, and the `report`. The `TeacherReport`
 contains `final_percent` (equal to the session's final computed progress, never
-recomputed), `explained_well`, `misconceptions_corrected`,
-`gaps_and_accidental_implications`, exactly one `improvement_suggestion`,
-`recommended_next_concept`, and `mastery_achieved` (true iff `final_percent` is 100).
+recomputed), `explained_well`, `evidence` (why each point scored: per confirmed point,
+the learner's own words when the Judge's evidence was a verbatim quote, else no quote),
+`misconceptions_corrected`, `gaps_and_accidental_implications`, exactly one
+`improvement_suggestion`, `recommended_next_concept`, and `mastery_achieved` (true iff
+`final_percent` is 100).
 
 ## 5. AI Student modes
 

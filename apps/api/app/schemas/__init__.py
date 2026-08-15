@@ -10,6 +10,7 @@ from .errors import Error, ErrorCode, ErrorEnvelope
 from .health import Database, Health
 from .sessions import (
     ActiveMisconception,
+    DemonstratedEvidence,
     EndReason,
     InputMode,
     Mode,
@@ -34,6 +35,7 @@ __all__ = [
     "ConceptRef",
     "Curriculum",
     "Database",
+    "DemonstratedEvidence",
     "EndReason",
     "Error",
     "ErrorCode",

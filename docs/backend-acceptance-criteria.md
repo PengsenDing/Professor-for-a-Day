@@ -317,9 +317,10 @@ Superseded by the frozen contract (read them through the OpenAPI document):
 - **AC-END-5** — Every exit path produces a Teacher Report. There is no code path that ends a
   session without one.
 - **AC-END-6** — The Teacher Report contains: `final_percent`; `explained_well` (list);
-  `misconceptions_corrected` (list); `gaps_and_accidental_implications` (list);
-  `improvement_suggestion` (exactly one, non-empty string); `recommended_next_concept`
-  (`{id, title}`); and `mastery_achieved` (boolean).
+  `evidence` (list, see AC-END-12); `misconceptions_corrected` (list);
+  `gaps_and_accidental_implications` (list); `improvement_suggestion` (exactly one,
+  non-empty string); `recommended_next_concept` (`{id, title}`); and `mastery_achieved`
+  (boolean).
 - **AC-END-7** — `final_percent` equals the session's final computed progress. The report
   never restates or recomputes a different number.
 - **AC-END-8** — `mastery_achieved` is `true` if and only if `final_percent == 100`. Below 100
@@ -334,6 +335,13 @@ Superseded by the frozen contract (read them through the OpenAPI document):
 - **AC-END-11** — A report is generated even when progress is `0` and no rubric point was
   confirmed; the lists may be empty but `improvement_suggestion` and
   `recommended_next_concept` are always present.
+- **AC-END-12** — `evidence` explains why each point was scored: one
+  `{point: {id, label}, quote, turn_number}` entry per confirmed rubric point, in rubric
+  order. `quote` is surfaced only when the Judge's recorded evidence is a **verbatim
+  substring** of that turn's learner submission — the learner's own words — and is `null`
+  otherwise; the Judge's free text never appears. Unconfirmed points never appear. The
+  field is optional-with-empty-default so reports persisted before it existed still
+  validate.
 - **AC-END-12** — The report is persisted on the session document at the moment the session
   ends and is returned verbatim on subsequent reads.
 - **AC-END-13** — The backend does not decide or emit the accomplishment animation. It only

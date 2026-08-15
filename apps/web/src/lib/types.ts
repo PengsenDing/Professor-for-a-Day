@@ -122,9 +122,21 @@ export interface SessionFinished {
   report: TeacherReport;
 }
 
+/**
+ * Why one rubric point was scored. `quote` is the learner's own words —
+ * surfaced only when the Judge's evidence was verbatim — or null.
+ */
+export interface DemonstratedEvidence {
+  point: RubricPointRef;
+  quote: string | null;
+  turn_number: number;
+}
+
 export interface TeacherReport {
   final_percent: number;
   explained_well: string[];
+  /** One entry per confirmed point, in rubric order. Absent in reports stored before this field existed. */
+  evidence?: DemonstratedEvidence[];
   misconceptions_corrected: string[];
   gaps_and_accidental_implications: string[];
   improvement_suggestion: string;

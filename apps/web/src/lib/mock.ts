@@ -7,6 +7,7 @@
 import { ApiError } from "./errors";
 import type {
   Curriculum,
+  DemonstratedEvidence,
   EndReason,
   Mode,
   RubricPointRef,
@@ -132,6 +133,8 @@ interface MockSession {
   turns: Record<string, TurnEnvelope>;
   /** Absent in sessions stored before the snapshot endpoint existed. */
   created_at?: string;
+  /** Learner quote per covered point; absent in older stored sessions. */
+  evidence_by_point?: Record<string, { quote: string; turn_number: number }>;
 }
 
 function loadAll(): Record<string, MockSession> {
@@ -178,9 +181,16 @@ function buildReport(session: MockSession): TeacherReport {
   if (session.misconception_posed && !session.misconception_resolved) {
     gaps.push(`Left unresolved: ${rubric.misconception.summary.toLowerCase()}`);
   }
+  const evidence: DemonstratedEvidence[] = covered.flatMap((p) => {
+    const source = session.evidence_by_point?.[p.id];
+    return source
+      ? [{ point: p, quote: source.quote, turn_number: source.turn_number }]
+      : [];
+  });
   return {
     final_percent: finalPercent,
     explained_well: covered.map((p) => `${p.label} — explained clearly with evidence.`),
+    evidence,
     misconceptions_corrected:
       session.misconception_posed && session.misconception_resolved
         ? [rubric.misconception.summary.replace(/^Believes /, "Corrected the belief that ")]
@@ -408,6 +418,15 @@ export async function mockSubmitTurn(
   }
 
   session.learner_turn_count += 1;
+  // A verbatim prefix of the learner's own words serves as the evidence quote.
+  const quote = text.length > 120 ? text.slice(0, 120) : text;
+  session.evidence_by_point ??= {};
+  for (const point of newlyCovered) {
+    session.evidence_by_point[point.id] = {
+      quote,
+      turn_number: session.learner_turn_count,
+    };
+  }
   const percent = percentFor(session);
   if (percent === 100) {
     session.status = "ended";

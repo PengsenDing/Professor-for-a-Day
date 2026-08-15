@@ -106,12 +106,38 @@ class ActiveMisconception(BaseModel):
     )
 
 
+class DemonstratedEvidence(BaseModel):
+    """Why one rubric point was scored: the learner's own words, or nothing.
+
+    `quote` is surfaced only when the Judge's recorded evidence is a verbatim
+    substring of that turn's submission — never Judge or rubric text.
+    """
+
+    point: RubricPointRef
+    quote: str | None = Field(
+        description=(
+            "The learner's own words that demonstrated the point; null when the "
+            "Judge's evidence was not a verbatim quote."
+        )
+    )
+    turn_number: Annotated[int, Field(ge=1)] = Field(
+        description="The learner turn in which the point was demonstrated."
+    )
+
+
 class TeacherReport(BaseModel):
     final_percent: Percent = Field(
         description="Equals the session's final computed progress; never recomputed."
     )
     explained_well: list[str] = Field(
         description="Grounded in this session's Judge evaluations only. May be empty."
+    )
+    evidence: list[DemonstratedEvidence] = Field(
+        default_factory=list,
+        description=(
+            "One entry per confirmed rubric point, in rubric order. Defaults to "
+            "empty so reports stored before this field existed stay valid."
+        ),
     )
     misconceptions_corrected: list[str]
     gaps_and_accidental_implications: list[str]

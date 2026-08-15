@@ -6,9 +6,60 @@ never contradict the computed progress (AC-END-7/9) or leak unconfirmed rubric
 labels (AC-RUB-6).
 """
 
+from typing import NamedTuple
+
 from ..curriculum.rubrics import Rubric
-from ..schemas import ConceptRef, Curriculum, TeacherReport
+from ..schemas import ConceptRef, Curriculum, DemonstratedEvidence, RubricPointRef, TeacherReport
+from .evaluation import DemonstratedPoint
 from .scoring import ScoringState
+
+
+class EvidenceSource(NamedTuple):
+    """One learner turn's contribution to the evidence trail."""
+
+    turn_number: int
+    learner_text: str
+    demonstrated: list[DemonstratedPoint]
+
+
+def collect_evidence(
+    rubric: Rubric,
+    state: ScoringState,
+    sources: list[EvidenceSource],
+) -> list[DemonstratedEvidence]:
+    """Why each confirmed point was scored, in rubric order (AC-END-12).
+
+    The quote is the learner's own words: it is surfaced only when the Judge's
+    recorded evidence is a verbatim substring of that turn's submission — the
+    same guard the mirror mechanism applies to misconception triggers. The
+    Judge's free text is otherwise withheld, so nothing it wrote can leak.
+    """
+    first_demonstration: dict[str, tuple[int, str | None]] = {}
+    for source in sources:
+        for demonstrated in source.demonstrated:
+            if demonstrated.point_id in first_demonstration:
+                continue
+            quote = demonstrated.evidence.strip()
+            verbatim = quote if quote and quote in source.learner_text else None
+            first_demonstration[demonstrated.point_id] = (source.turn_number, verbatim)
+
+    evidence: list[DemonstratedEvidence] = []
+    for point in rubric.points:
+        if point.id not in state.confirmed_point_ids:
+            continue
+        demonstration = first_demonstration.get(point.id)
+        if demonstration is None:
+            # Confirmed before this feature existed (finish on an old session).
+            continue
+        turn_number, quote = demonstration
+        evidence.append(
+            DemonstratedEvidence(
+                point=RubricPointRef(id=point.id, label=point.label),
+                quote=quote,
+                turn_number=turn_number,
+            )
+        )
+    return evidence
 
 
 def build_report(
@@ -18,6 +69,7 @@ def build_report(
     concept_id: str,
     state: ScoringState,
     final_percent: int,
+    evidence_sources: list[EvidenceSource] | None = None,
 ) -> TeacherReport:
     explained_well = [
         point.label for point in rubric.points if point.id in state.confirmed_point_ids
@@ -41,6 +93,7 @@ def build_report(
     return TeacherReport(
         final_percent=final_percent,
         explained_well=explained_well,
+        evidence=collect_evidence(rubric, state, evidence_sources or []),
         misconceptions_corrected=misconceptions_corrected,
         gaps_and_accidental_implications=gaps,
         improvement_suggestion=_improvement_suggestion(state, final_percent),
