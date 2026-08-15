@@ -1,16 +1,28 @@
 /* Pastel rounded-script intro overlay on a clean warm-white background.
    Colors come from intro-config (inline); this file owns layout, the
    button look, and the exit-transition keyframes. Timing arrives via CSS
-   variables set by the components (--zoom-*, --reveal-*). */
+   variables set by the components (--zoom-*, --reveal-*).
+
+   Theming: the backdrop and ink live in --intro-* variables so dark mode
+   only re-points them — the pastel title art itself reads on both. */
 
 .overlay {
   position: fixed;
   inset: 0;
   z-index: 50;
-  background: #fafaf8;
+  /* Warm paper, deliberately not the pure-white page token. */
+  --intro-bg: #fafaf8;
+  --intro-ink: 42, 45, 53;
+  background: var(--intro-bg);
 }
 
-/* On exit, the white backdrop dissolves partway through the fly-through,
+:global(.dark) .overlay {
+  /* The page token itself, so the exit dissolve lands exactly on the page. */
+  --intro-bg: var(--background);
+  --intro-ink: 226, 228, 235;
+}
+
+/* On exit, the backdrop dissolves partway through the fly-through,
    revealing the Select a Concept page while the title passes the camera. */
 .overlayZooming {
   animation: backdrop-reveal var(--reveal-duration, 600ms) ease-out
@@ -19,7 +31,7 @@
 
 @keyframes backdrop-reveal {
   from {
-    background: #fafaf8;
+    background: var(--intro-bg, #fafaf8);
   }
   to {
     background: transparent;
@@ -108,6 +120,18 @@
     var(--zoom-delay, 300ms) both;
 }
 
+/* Dark mode: the same lavender→blue arc, deepened so the pass-through
+   never flash-bangs over the dark page. */
+:global(.dark) .zoomGlow {
+  background: radial-gradient(
+    circle,
+    rgba(39, 39, 46, 0.95) 0%,
+    rgba(44, 39, 62, 0.8) 35%,
+    rgba(33, 42, 54, 0.5) 58%,
+    transparent 78%
+  );
+}
+
 @keyframes glow-expand {
   0% {
     transform: scale(0.12);
@@ -130,19 +154,49 @@
   }
 }
 
-/* ---------- START button ---------- */
+/* ---------- Click-anywhere target ---------- */
 
-.actions {
+/* Full-screen, mostly invisible button: after the title is written, a
+   click anywhere (or Enter/Space) begins. Rendered after the stage so it
+   sits above the Player; the zoom layer above it is pointer-events: none. */
+.clickAnywhere {
   position: absolute;
-  left: 0;
-  right: 0;
-  bottom: clamp(3rem, 10vh, 6.5rem);
+  inset: 0;
+  border: none;
+  background: transparent;
+  padding: 0;
   display: flex;
+  align-items: flex-end;
   justify-content: center;
+  cursor: pointer;
+
+  /* Inert until the title is fully written — early clicks fall through
+     and the writing choreography is preserved. */
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 700ms ease;
 }
 
-.startButton {
-  cursor: pointer;
+.clickAnywhere:focus {
+  outline: none;
+}
+
+.clickAnywhereVisible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.clickAnywherePressed {
+  opacity: 0;
+  transition-duration: 250ms;
+  cursor: default;
+}
+
+/* The visible hint, sitting where the START button used to. */
+.clickHint {
+  margin-bottom: clamp(3rem, 10vh, 6.5rem);
+  padding: 0.6em 1.4em;
+  border-radius: 999px;
   font-family:
     "SF Pro Text",
     -apple-system,
@@ -151,58 +205,39 @@
     "Inter",
     "Segoe UI",
     sans-serif;
-  font-size: clamp(0.85rem, 1.2vw, 1.05rem);
+  font-size: clamp(0.8rem, 1.1vw, 1rem);
   font-weight: 500;
-  letter-spacing: 0.42em;
-  text-indent: 0.42em; /* visually recenters letter-spaced text */
-  color: #2a2d35;
-  background: #ffffff;
-  border: 1px solid rgba(42, 45, 53, 0.18);
-  border-radius: 999px;
-  padding: 1.05em 3.2em;
-  box-shadow:
-    0 2px 6px rgba(58, 63, 74, 0.06),
-    0 10px 30px rgba(58, 63, 74, 0.08);
-
-  /* Hidden until the title is fully written. */
-  opacity: 0;
-  transform: translateY(10px);
-  pointer-events: none;
-  transition:
-    opacity 700ms ease,
-    transform 280ms ease,
-    background-color 200ms ease,
-    border-color 200ms ease,
-    box-shadow 200ms ease;
+  letter-spacing: 0.18em;
+  text-indent: 0.18em; /* visually recenters letter-spaced text */
+  color: rgba(var(--intro-ink), 0.55);
+  animation: hint-pulse 2.8s ease-in-out infinite;
 }
 
-.startButtonVisible {
-  opacity: 1;
-  transform: translateY(0);
-  pointer-events: auto;
+/* Keyboard users still get a visible focus indicator on the hint. */
+.clickAnywhereVisible:focus-visible .clickHint {
+  outline: 1px solid rgba(var(--intro-ink), 0.35);
+  outline-offset: 2px;
 }
 
-.startButtonVisible:hover:not(:disabled),
-.startButtonVisible:focus-visible {
-  transform: scale(1.04);
-  border-color: rgba(42, 45, 53, 0.35);
-  box-shadow:
-    0 3px 10px rgba(58, 63, 74, 0.1),
-    0 14px 38px rgba(58, 63, 74, 0.12);
-  outline: none;
-}
-
-.startButtonPressed {
-  transform: scale(0.95);
-  transition-duration: 120ms;
-  cursor: default;
+@keyframes hint-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
 }
 
 /* ---------- Reduced motion ---------- */
 
 @media (prefers-reduced-motion: reduce) {
-  .startButton {
+  .clickAnywhere {
     transition: none;
+  }
+
+  .clickHint {
+    animation: none;
   }
 
   .overlayZooming {

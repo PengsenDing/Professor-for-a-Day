@@ -21,15 +21,11 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Textarea } from "@/components/ui/textarea";
-import { MisconceptionCard } from "@/components/misconception-card";
-import { ModeAvatar } from "@/components/mode-icon";
-import { PortraitStudentAvatar } from "@/components/portrait-student-avatar";
-import { RubricProgress } from "@/components/rubric-progress";
-import {
-  StudentAvatar,
-  type StudentAvatarState,
-} from "@/components/student-avatar";
-import { STUDENT_ART } from "@/lib/student-art";
+import { CharacterVideoAvatar } from "@/components/character-video-avatar";
+import { SessionInsightSphere } from "@/components/session-insight-sphere";
+import type { StudentAvatarState } from "@/components/student-avatar";
+import { ThemeToggle } from "@/components/theme-toggle";
+import { CHARACTER_BY_MODE } from "@/lib/characters";
 import {
   finishSession,
   getTurnSpeech,
@@ -53,16 +49,6 @@ interface PendingTurn {
   text: string;
   input_mode: InputMode;
 }
-
-/** Visible caption for each avatar state; also read by screen readers. */
-const AVATAR_CAPTIONS: Record<StudentAvatarState, string> = {
-  idle: "is waiting for your explanation",
-  listening: "is listening carefully…",
-  thinking: "is thinking it over…",
-  speaking: "is replying…",
-  happy: "is proud of you! 🎓",
-  confused: "didn't catch that — try again",
-};
 
 export default function SessionPage() {
   const { id } = useParams<{ id: string }>();
@@ -93,6 +79,20 @@ export default function SessionPage() {
     const duration = Math.min(2000 + text.length * 30, 9000);
     speakTimer.current = window.setTimeout(() => setAvatarSpeaking(false), duration);
   }
+
+  // One-shot celebration: the video character greets when mastery is reached.
+  const [celebrateSignal, setCelebrateSignal] = useState(0);
+  const celebrated = useRef(false);
+  useEffect(() => {
+    if (
+      !celebrated.current &&
+      session?.status === "ended" &&
+      session.end_reason === "mastery"
+    ) {
+      celebrated.current = true;
+      setCelebrateSignal((n) => n + 1);
+    }
+  }, [session?.status, session?.end_reason]);
 
   // Voice input: push-to-talk, transcribed then submitted as an ordinary turn.
   const [recording, setRecording] = useState(false);
@@ -131,7 +131,10 @@ export default function SessionPage() {
   function updateSession(next: StoredSession) {
     saveStoredSession(next);
     setSession(next);
-    if (next.report) recordMastery(next.concept.id, next.report.final_percent);
+    // Session progress is monotonic and final_percent equals the final
+    // progress, so recording every turn keeps the home graph's water level
+    // in sync with the live session without changing best-of semantics.
+    recordMastery(next.concept.id, next.progress.percent);
   }
 
   async function speak(turnNumber: number) {
@@ -350,6 +353,7 @@ export default function SessionPage() {
               <Progress value={percent} className="h-2" />
             </div>
           </div>
+          <ThemeToggle className="shrink-0" />
           <Button
             variant="ghost"
             size="icon"
@@ -381,47 +385,46 @@ export default function SessionPage() {
         </div>
       </header>
 
-      <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-4 overflow-hidden p-4 lg:flex-row">
-        <section className="flex min-h-0 flex-1 flex-col rounded-lg border bg-background">
+      <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col overflow-hidden p-4">
+        <section className="flex min-h-0 flex-1 flex-col bg-background">
+          {/* The header progress bar is sm+; small screens get it here. */}
+          <div className="px-3 pt-1 sm:hidden">
+            <div className="mb-1 flex items-center justify-between text-xs">
+              <span className="text-muted-foreground">Progress</span>
+              <span className="font-medium tabular-nums">{percent}%</span>
+            </div>
+            <Progress value={percent} className="h-2" />
+          </div>
+
           {/* The student: centered and large before the first turn, then a
               compact strip docked above the conversation. */}
           <div
             className={cn(
               "flex flex-col items-center justify-center transition-all duration-500",
-              conversationStarted ? "gap-0 border-b py-1.5" : "flex-1 gap-1 py-6",
+              conversationStarted ? "gap-0 py-1.5" : "flex-1 gap-1 py-6",
             )}
           >
-            {STUDENT_ART[session.mode] ? (
-              <PortraitStudentAvatar
-                art={STUDENT_ART[session.mode]!}
-                state={avatarState}
-                className={cn(
-                  "transition-all duration-500",
-                  conversationStarted
-                    ? "size-16 sm:size-20"
-                    : "size-40 sm:size-52",
-                )}
-              />
-            ) : (
-              <StudentAvatar
-                state={avatarState}
-                mode={session.mode}
-                className={cn(
-                  "transition-all duration-500",
-                  conversationStarted
-                    ? "size-16 sm:size-20"
-                    : "size-40 sm:size-52",
-                )}
-              />
-            )}
-            <p
-              role="status"
-              aria-live="polite"
-              className="text-xs text-muted-foreground"
-            >
-              <span className="font-medium text-foreground">{mode.name}</span>{" "}
-              {AVATAR_CAPTIONS[avatarState]}
-            </p>
+            {/* The video character mirrors the conversation: the listening
+                clip while the learner talks (or the reply is being thought
+                over), the speaking clip while AI audio plays or a reply is
+                on screen, idle otherwise. On mastery it greets once as a
+                little celebration. */}
+            <CharacterVideoAvatar
+              characterId={CHARACTER_BY_MODE[session.mode]}
+              isListening={
+                avatarState === "listening" || avatarState === "thinking"
+              }
+              isSpeaking={avatarState === "speaking"}
+              greetSignal={celebrateSignal}
+              showBubble={false}
+              className={cn(
+                "transition-all duration-500",
+                conversationStarted
+                  ? "size-16 sm:size-20"
+                  : "size-40 sm:size-52",
+              )}
+            />
+
           </div>
 
           <div
@@ -472,7 +475,7 @@ export default function SessionPage() {
             <div ref={bottomRef} />
           </div>
 
-          <div className="border-t p-3">
+          <div className="p-3">
             {turnError && (
               <Alert variant="destructive" className="mb-3">
                 <AlertTitle>Your explanation didn&apos;t go through</AlertTitle>
@@ -516,7 +519,7 @@ export default function SessionPage() {
                 value={input}
                 maxLength={MAX_LEARNER_TEXT_LENGTH}
                 rows={2}
-                className="max-h-40 resize-none"
+                className="max-h-40 resize-none rounded-2xl"
                 disabled={busy || ended}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => {
@@ -529,7 +532,7 @@ export default function SessionPage() {
               <Button
                 size="icon"
                 variant={recording ? "destructive" : "outline"}
-                className="shrink-0"
+                className="shrink-0 rounded-full"
                 disabled={busy || ended}
                 aria-label={
                   recording ? "Stop recording and send" : "Start voice input"
@@ -550,7 +553,7 @@ export default function SessionPage() {
               </Button>
               <Button
                 size="icon"
-                className="shrink-0"
+                className="shrink-0 rounded-full"
                 disabled={busy || ended || input.trim().length === 0}
                 onClick={sendText}
                 aria-label="Send explanation"
@@ -567,23 +570,18 @@ export default function SessionPage() {
                 ? "Recording… click the mic again to stop and send"
                 : `${session.turns_remaining} turns left · Enter to send, or click the mic to talk`}
             </p>
+
+            {/* Session evidence lives in a floating sphere under the
+                composer: hover previews the section titles, click opens
+                the full points + misconception panel. */}
+            <SessionInsightSphere
+              points={session.covered_points}
+              misconception={session.active_misconception}
+              studentName={mode.name}
+              className="mt-2"
+            />
           </div>
         </section>
-
-        <aside className="w-full shrink-0 space-y-4 overflow-y-auto lg:w-80">
-          <div className="sm:hidden">
-            <div className="mb-1 flex items-center justify-between text-xs">
-              <span className="text-muted-foreground">Progress</span>
-              <span className="font-medium tabular-nums">{percent}%</span>
-            </div>
-            <Progress value={percent} className="h-2" />
-          </div>
-          <RubricProgress points={session.covered_points} />
-          <MisconceptionCard
-            misconception={session.active_misconception}
-            studentName={mode.name}
-          />
-        </aside>
       </div>
     </div>
   );
@@ -608,8 +606,7 @@ function MessageBubble({
     );
   }
   return (
-    <div className="flex items-start gap-2.5">
-      <ModeAvatar mode={session.mode} />
+    <div className="flex items-start">
       <div className="max-w-[80%] space-y-1">
         <div className="flex items-center gap-2">
           <span className="text-xs font-medium">{MODES[session.mode].name}</span>

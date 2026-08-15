@@ -3,7 +3,7 @@
  * The Remotion composition (handwritten title), the zoom transition, and
  * the overlay all read from here and never hardcode these values.
  *
- * Frame values assume `COMPOSITION.fps` (30fps → 30 frames = 1 second).
+ * Frame values assume `COMPOSITION.fps` (60fps → 60 frames = 1 second).
  * "Units" are font units of the single-line script (1000 per em); the
  * whole title is scaled to `TITLE.renderWidthPx` on the 1920×1080 canvas.
  */
@@ -12,12 +12,12 @@ export const COMPOSITION = {
   id: "IntroAnimation",
   width: 1920,
   height: 1080,
-  fps: 30,
+  fps: 60,
   /**
    * After the writing completes, the glow breathes on a seamless loop this
    * long (the breathing sine completes exactly one cycle per loop).
    */
-  breatheFrames: 180,
+  breatheFrames: 360,
 } as const;
 
 export const COLORS = {
@@ -43,20 +43,21 @@ export const TITLE = {
   /** Exact wording and capitalization — do not alter. */
   text: "Professor for a Day",
   /** Width of the written title on the 1920×1080 canvas (title scale). */
-  renderWidthPx: 1300,
+  renderWidthPx: 1400,
   /** Vertical center of the title on the canvas. */
   centerY: 500,
 } as const;
 
 export const STROKE = {
   /**
-   * Stroke width of the rounded tube, in font units (~1000/em). Matches
-   * the measured stroke weight of Borel-Regular, so the tube drawn along
-   * the glyph centerlines reproduces the real letterforms.
+   * Stroke width of the rounded tube, in font units (~1000/em). Borel's
+   * measured stroke weight is ~89; the tube is drawn deliberately heavier
+   * for a bolder title. Beyond ~120 the tight counters (e, o, a) start
+   * closing up.
    */
-  widthUnits: 89,
+  widthUnits: 112,
   /** Diameter of the writing tip's ball, font units. */
-  tipSizeUnits: 98,
+  tipSizeUnits: 122,
 } as const;
 
 /**
@@ -88,20 +89,22 @@ export const DEPTH = {
 
 export const WRITING = {
   /** Ink speed: font units of stroke drawn per frame (writing speed). */
-  drawUnitsPerFrame: 105,
+  drawUnitsPerFrame: 300,
   /** Travel speed of the lifted pen between strokes, units per frame. */
-  moveUnitsPerFrame: 340,
+  moveUnitsPerFrame: 700,
   /** Minimum frames for any pen-lift hop (keeps tiny hops visible). */
-  minMoveFrames: 2,
+  minMoveFrames: 1,
+  /** Minimum frames for any ink stroke (keeps tiny strokes visible). */
+  minDrawFrames: 2,
   /** Extra pause when the pen crosses a word gap (frames). */
-  wordPauseFrames: 7,
+  wordPauseFrames: 3,
   /** Where the tip enters from, left of the title (font units). */
   entryDistanceUnits: 900,
-  entryFrames: 22,
+  entryFrames: 12,
   /** How high the lifted pen arcs during hops (font units). */
   liftArcUnits: 70,
   /** Hold after the flourish before the button appears (frames). */
-  holdFrames: 10,
+  holdFrames: 20,
 } as const;
 
 /**
@@ -123,7 +126,8 @@ export const ZOOM = {
 } as const;
 
 export const UI = {
-  startLabel: "START",
+  /** Hint shown once the title is written; the whole screen is the target. */
+  clickHintLabel: "Click anywhere to begin",
   /** Exit duration when prefers-reduced-motion is set. */
   reducedMotionExitMs: 200,
   /**

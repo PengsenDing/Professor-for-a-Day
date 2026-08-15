@@ -9,7 +9,7 @@ import {
 } from "react";
 import dynamic from "next/dynamic";
 import { UI, ZOOM } from "./intro-config";
-import { StartButton } from "./start-button";
+import { ClickAnywhere } from "./click-anywhere";
 import { TitleZoomTransition } from "./title-zoom-transition";
 import styles from "./intro.module.css";
 
@@ -48,11 +48,12 @@ const useAlreadySeen = (): boolean =>
 
 /**
  * Full-screen intro (the IntroPage layer) shown on top of the Select a
- * Concept page. Flow: the title reveals → START appears → on click, the
- * title flies toward the viewer (TitleZoomTransition) while the black
- * backdrop dissolves, revealing the page beneath — entering *through* the
- * title rather than a fade or reload. The concept page itself is untouched
- * and keeps loading its curriculum in the background.
+ * Concept page. Flow: the title reveals → the "Click anywhere to begin"
+ * hint appears → on a click anywhere, the title flies toward the viewer
+ * (TitleZoomTransition) while the black backdrop dissolves, revealing the
+ * page beneath — entering *through* the title rather than a fade or
+ * reload. The concept page itself is untouched and keeps loading its
+ * curriculum in the background.
  */
 export const IntroOverlay = () => {
   const prefersReducedMotion = usePrefersReducedMotion();
@@ -63,7 +64,7 @@ export const IntroOverlay = () => {
   const [titleRevealed, setTitleRevealed] = useState(false);
 
   // With reduced motion there is no reveal animation to wait for.
-  const showButton = titleRevealed || prefersReducedMotion;
+  const showHint = titleRevealed || prefersReducedMotion;
 
   useEffect(() => {
     return () => {
@@ -120,8 +121,8 @@ export const IntroOverlay = () => {
 
       {zooming && !prefersReducedMotion ? <TitleZoomTransition /> : null}
 
-      <StartButton
-        visible={showButton}
+      <ClickAnywhere
+        visible={showHint}
         pressed={zooming}
         onClick={handleStart}
       />

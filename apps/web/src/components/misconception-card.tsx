@@ -19,7 +19,7 @@ export function MisconceptionCard({
   studentName: string;
 }) {
   return (
-    <Card className="gap-3 py-4">
+    <Card className="gap-3 border-0 py-4 shadow-none">
       <CardHeader className="px-4">
         <CardTitle className="flex items-center gap-2 text-sm font-semibold">
           <Brain className="size-4 text-muted-foreground" />

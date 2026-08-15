@@ -34,7 +34,11 @@ export const TitleAnimation: React.FC = () => {
   const titleHeight = TITLE.renderWidthPx * TITLE_ASPECT;
 
   return (
-    <AbsoluteFill style={{ backgroundColor: COLORS.background }}>
+    <AbsoluteFill
+      // Theme-aware: --intro-bg cascades from the overlay (intro.module.css);
+      // the config color remains the fallback outside the overlay (Studio).
+      style={{ backgroundColor: `var(--intro-bg, ${COLORS.background})` }}
+    >
       {/* Flat background: any shading here would seam against the
           overlay's letterbox areas outside the 16:9 canvas. */}
       <div

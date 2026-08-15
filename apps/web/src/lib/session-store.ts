@@ -121,7 +121,7 @@ export function loadMastery(): Record<string, number> {
   }
 }
 
-/** Records a finished session's score; keeps the previous best if higher. */
+/** Records a session's progress (per turn or final); keeps the previous best if higher. */
 export function recordMastery(conceptId: string, percent: number) {
   const mastery = loadMastery();
   if (percent > (mastery[conceptId] ?? 0)) {

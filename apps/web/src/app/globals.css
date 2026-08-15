@@ -50,6 +50,7 @@
 }
 
 :root {
+  color-scheme: light;
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
@@ -85,6 +86,7 @@
 }
 
 .dark {
+  color-scheme: dark;
   --background: oklch(0.145 0 0);
   --foreground: oklch(0.985 0 0);
   --card: oklch(0.205 0 0);
@@ -456,5 +458,458 @@
     animation: none !important;
     opacity: 1;
     transform: translate(-50%, 0) scale(1);
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   3D student avatar (components/lily/*)
+   Scoped under .lily. The character itself is animated in WebGL; this layer
+   only owns the container — hover lift, focus ring, and the selected glow —
+   so the DOM and the 3D scene never argue about the same motion. */
+
+@keyframes lily-confirm {
+  0% { transform: scale(1); }
+  45% { transform: scale(1.06); }
+  100% { transform: scale(1); }
+}
+@keyframes lily-badge-pop {
+  0% { transform: scale(0); opacity: 0; }
+  60% { transform: scale(1.25); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.lily .lily-circle {
+  transition: transform 0.35s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.35s ease;
+  box-shadow: 0 6px 20px -10px color-mix(in oklab, var(--foreground) 45%, transparent);
+}
+
+.lily:hover .lily-circle,
+.lily:focus-visible .lily-circle {
+  transform: scale(1.06);
+  box-shadow:
+    0 0 0 4px color-mix(in oklab, var(--ring) 28%, transparent),
+    0 12px 34px -8px color-mix(in oklab, var(--ring) 55%, transparent);
+}
+
+/* Selected: a soft, persistent glow that outranks the hover ring. */
+.lily[data-selected] .lily-circle {
+  animation: lily-confirm 0.4s ease-out;
+  transform: scale(1.05);
+  box-shadow:
+    0 0 0 4px color-mix(in oklab, var(--primary) 38%, transparent),
+    0 0 26px 2px color-mix(in oklab, var(--primary) 30%, transparent),
+    0 12px 36px -8px color-mix(in oklab, var(--primary) 55%, transparent);
+}
+.lily[data-selected]:hover .lily-circle,
+.lily[data-selected]:focus-visible .lily-circle { transform: scale(1.1); }
+
+.lily .lily-badge { animation: lily-badge-pop 0.35s ease-out both; }
+
+@media (prefers-reduced-motion: reduce) {
+  /* Selection and focus stay fully legible — only the motion goes away. */
+  .lily .lily-circle,
+  .lily[data-selected] .lily-circle { animation: none !important; }
+  .lily .lily-circle { transition: box-shadow 0.2s ease; }
+  .lily:hover .lily-circle,
+  .lily:focus-visible .lily-circle,
+  .lily[data-selected] .lily-circle,
+  .lily[data-selected]:hover .lily-circle { transform: none; }
+  .lily .lily-badge { animation: none !important; }
+}
+
+/* ---------------------------------------------------------------------------
+   Character video avatar (components/character-video-avatar.tsx)
+   Scoped under .cva. The character itself is a pre-rendered video clip; this
+   layer only owns the container — hover lift, focus ring, selected glow,
+   confirmation pulse and the greeting bubble — so the DOM never animates the
+   character on top of the video. The crossfade between state clips lives
+   inline in the component (transition-opacity). Reuses the lily and spa
+   keyframes, same as .psa reuses spa-float. */
+
+.cva .cva-circle {
+  transition:
+    transform 0.35s cubic-bezier(0.2, 0.8, 0.2, 1),
+    box-shadow 0.35s ease,
+    border-color 0.3s ease;
+  box-shadow: 0 6px 20px -10px color-mix(in oklab, var(--foreground) 45%, transparent);
+}
+/* Greeting bubble, manga-style: bold ink outline with slightly uneven,
+   hand-drawn radii, a hard offset "printed" shadow, an outlined speech tail
+   pointing at the speaker, and a 3D pop — it swings up from the tail with
+   perspective and settles into a gentle floating tilt. */
+@keyframes cva-bubble-pop {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, 16px) perspective(320px) rotateX(58deg)
+      scale(0.35);
+  }
+  55% {
+    opacity: 1;
+    transform: translate(-50%, -3px) perspective(320px) rotateX(-8deg)
+      rotateY(-8deg) scale(1.1);
+  }
+  75% {
+    transform: translate(-50%, 1px) perspective(320px) rotateX(5deg)
+      rotateY(-5deg) scale(0.97);
+  }
+  100% {
+    opacity: 1;
+    transform: translate(-50%, 0) perspective(320px) rotateX(7deg)
+      rotateY(-7deg) scale(1);
+  }
+}
+
+.cva .cva-bubble {
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, 8px) scale(0.6);
+  transform-origin: 50% 100%;
+  background: var(--background);
+  border: 2px solid var(--foreground);
+  border-radius: 16px 18px 14px 19px / 18px 14px 19px 15px;
+  box-shadow:
+    3px 4px 0 color-mix(in oklab, var(--foreground) 85%, transparent),
+    6px 8px 14px -6px color-mix(in oklab, var(--foreground) 35%, transparent);
+}
+/* Speech tail: ::before draws the ink outline, ::after fills it with the
+   bubble colour and covers the border where the tail joins the box. */
+.cva .cva-bubble::before,
+.cva .cva-bubble::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  clip-path: polygon(10% 0, 90% 0, 42% 100%);
+}
+.cva .cva-bubble::before {
+  bottom: -9px;
+  width: 18px;
+  height: 11px;
+  margin-left: -9px;
+  background: var(--foreground);
+}
+.cva .cva-bubble::after {
+  bottom: -6px;
+  width: 12px;
+  height: 9px;
+  margin-left: -6px;
+  background: var(--background);
+}
+
+.cva:hover .cva-circle,
+.cva:focus-visible .cva-circle {
+  transform: scale(1.05);
+  box-shadow:
+    0 0 0 4px color-mix(in oklab, var(--ring) 28%, transparent),
+    0 12px 34px -8px color-mix(in oklab, var(--ring) 55%, transparent);
+}
+
+/* The bubble follows the greeting clip (state-driven, not hover-driven), so a
+   greeting triggered from the surrounding card shows it too. */
+.cva[data-greeting] .cva-bubble {
+  animation: cva-bubble-pop 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+}
+
+/* Selected: confirmation pulse + a persistent glow that outranks hover. */
+.cva[data-selected] .cva-circle {
+  animation: lily-confirm 0.4s ease-out;
+  box-shadow:
+    0 0 0 4px color-mix(in oklab, var(--primary) 38%, transparent),
+    0 0 26px 2px color-mix(in oklab, var(--primary) 30%, transparent),
+    0 12px 36px -8px color-mix(in oklab, var(--primary) 55%, transparent);
+}
+.cva .cva-badge { animation: lily-badge-pop 0.35s ease-out both; }
+
+@media (prefers-reduced-motion: reduce) {
+  /* Selection, focus and the videos stay fully functional — only container
+     motion (scale, pulses, bubble bounce) goes away. */
+  .cva .cva-circle,
+  .cva[data-selected] .cva-circle,
+  .cva .cva-badge { animation: none !important; }
+  .cva .cva-circle { transition: box-shadow 0.2s ease, border-color 0.2s ease; }
+  .cva:hover .cva-circle,
+  .cva:focus-visible .cva-circle { transform: none; }
+  .cva[data-greeting] .cva-bubble {
+    animation: none !important;
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Start-teaching sphere (components/start-teaching-sphere.tsx)
+   Scoped under .sts. A transparent glass sphere standing in for the old
+   "Start Teaching" button: neutral glass at rest, green glow on hover/focus,
+   an expanding ring-and-spark burst on click, and a rising green water fill
+   while the session request runs (the graph's mastery-water motif). */
+
+.sts { --sts-green: oklch(0.72 0.17 155); }
+
+@keyframes sts-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+@keyframes sts-ring {
+  from { opacity: 0.9; transform: scale(0.6); }
+  to { opacity: 0; transform: scale(2.15); }
+}
+@keyframes sts-spark {
+  from { opacity: 1; transform: translate(-50%, -50%) rotate(var(--sts-a)) translateX(12px) scale(1); }
+  to { opacity: 0; transform: translate(-50%, -50%) rotate(var(--sts-a)) translateX(var(--sts-d)) scale(0.25); }
+}
+@keyframes sts-rise {
+  from { transform: translateY(101%); }
+  to { transform: translateY(34%); }
+}
+@keyframes sts-water-bob {
+  from { transform: translateY(34%); }
+  to { transform: translateY(28%); }
+}
+/* Pending heartbeat: the whole shadow stack is restated in each frame because
+   box-shadow animates as one list. */
+@keyframes sts-halo {
+  0%, 100% {
+    box-shadow:
+      inset 0 -16px 26px -12px color-mix(in oklab, var(--sts-green) 35%, transparent),
+      inset 0 12px 20px -10px color-mix(in oklab, white 75%, transparent),
+      0 0 0 4px color-mix(in oklab, var(--sts-green) 20%, transparent),
+      0 0 30px 4px color-mix(in oklab, var(--sts-green) 35%, transparent);
+  }
+  50% {
+    box-shadow:
+      inset 0 -16px 26px -12px color-mix(in oklab, var(--sts-green) 42%, transparent),
+      inset 0 12px 20px -10px color-mix(in oklab, white 75%, transparent),
+      0 0 0 6px color-mix(in oklab, var(--sts-green) 28%, transparent),
+      0 0 56px 12px color-mix(in oklab, var(--sts-green) 55%, transparent);
+  }
+}
+
+.sts .sts-float { animation: sts-float 4.5s ease-in-out infinite; }
+
+.sts .sts-btn { transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.sts .sts-btn:hover:not(:disabled) { transform: scale(1.05); }
+.sts .sts-btn:active:not(:disabled) {
+  transform: scale(0.92);
+  transition-duration: 0.1s;
+}
+.sts .sts-btn:disabled:not([data-pending]) {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* The glass: a specular highlight up-left, ambient shading down-right, and a
+   barely-there body tint so whatever is behind shows through. */
+.sts .sts-shell {
+  border: 1px solid color-mix(in oklab, var(--foreground) 14%, transparent);
+  background:
+    radial-gradient(circle at 32% 26%, color-mix(in oklab, white 92%, transparent) 0%, color-mix(in oklab, white 30%, transparent) 16%, transparent 45%),
+    radial-gradient(circle at 68% 82%, color-mix(in oklab, var(--foreground) 10%, transparent) 0%, transparent 55%),
+    color-mix(in oklab, var(--muted) 35%, transparent);
+  box-shadow:
+    inset 0 -16px 26px -12px color-mix(in oklab, var(--foreground) 28%, transparent),
+    inset 0 12px 20px -10px color-mix(in oklab, white 75%, transparent),
+    0 14px 30px -16px color-mix(in oklab, var(--foreground) 55%, transparent);
+  transition: box-shadow 0.35s ease, border-color 0.3s ease;
+}
+.sts .sts-label { transition: color 0.3s ease; }
+
+.sts .sts-btn:hover:not(:disabled) .sts-shell,
+.sts .sts-btn:focus-visible .sts-shell {
+  border-color: color-mix(in oklab, var(--sts-green) 70%, transparent);
+  box-shadow:
+    inset 0 -16px 26px -12px color-mix(in oklab, var(--sts-green) 42%, transparent),
+    inset 0 12px 20px -10px color-mix(in oklab, white 75%, transparent),
+    0 0 0 5px color-mix(in oklab, var(--sts-green) 30%, transparent),
+    0 0 64px 14px color-mix(in oklab, var(--sts-green) 60%, transparent),
+    0 14px 30px -16px color-mix(in oklab, var(--foreground) 45%, transparent);
+}
+/* The play triangle itself lights up: green tint + its own glow. */
+.sts .sts-btn:hover:not(:disabled) .sts-label,
+.sts .sts-btn:focus-visible .sts-label {
+  color: color-mix(in oklab, var(--sts-green) 80%, var(--foreground));
+  filter: drop-shadow(0 0 8px color-mix(in oklab, var(--sts-green) 80%, transparent));
+}
+
+/* Click burst. Rings and sparks start invisible so their animation-delay
+   never flashes them at rest. */
+.sts .sts-ring {
+  opacity: 0;
+  border: 2px solid color-mix(in oklab, var(--sts-green) 75%, transparent);
+  animation: sts-ring 0.7s cubic-bezier(0.2, 0.7, 0.3, 1) forwards;
+}
+.sts .sts-ring2 {
+  border-width: 1px;
+  animation-duration: 0.95s;
+  animation-delay: 0.12s;
+}
+.sts .sts-spark {
+  opacity: 0;
+  background: var(--sts-green);
+  animation: sts-spark 0.7s cubic-bezier(0.15, 0.7, 0.3, 1) forwards;
+}
+.sts .sts-spark:nth-child(3n) { background: color-mix(in oklab, white 45%, var(--sts-green)); }
+.sts .sts-spark:nth-child(4n) { width: 4px; height: 4px; }
+
+/* Pending: green water rises inside the sphere, then bobs; the shell pulses. */
+.sts .sts-water {
+  opacity: 0;
+  background: linear-gradient(
+    to top,
+    color-mix(in oklab, var(--sts-green) 55%, transparent) 0%,
+    color-mix(in oklab, var(--sts-green) 30%, transparent) 70%,
+    color-mix(in oklab, var(--sts-green) 12%, transparent) 100%
+  );
+}
+.sts .sts-water::before {
+  content: "";
+  position: absolute;
+  top: -2px;
+  right: 0;
+  left: 0;
+  height: 5px;
+  border-radius: 50%;
+  background: color-mix(in oklab, white 40%, var(--sts-green));
+  filter: blur(2px);
+}
+.sts .sts-btn[data-pending] .sts-water {
+  opacity: 1;
+  animation:
+    sts-rise 0.9s cubic-bezier(0.2, 0.8, 0.2, 1) forwards,
+    sts-water-bob 2.2s ease-in-out 0.9s infinite alternate;
+}
+.sts .sts-btn[data-pending] .sts-shell {
+  border-color: color-mix(in oklab, var(--sts-green) 60%, transparent);
+  animation: sts-halo 1.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Hover/pending state changes stay legible via colour; motion goes away.
+     Rings and sparks rest at opacity 0, so killing their animation hides
+     the burst entirely. */
+  .sts .sts-float,
+  .sts .sts-ring,
+  .sts .sts-spark,
+  .sts .sts-btn[data-pending] .sts-shell { animation: none !important; }
+  .sts .sts-btn { transition: none; }
+  .sts .sts-btn:hover:not(:disabled),
+  .sts .sts-btn:active:not(:disabled) { transform: none; }
+  .sts .sts-btn[data-pending] .sts-water {
+    animation: none !important;
+    transform: translateY(34%);
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Session insight sphere (components/session-insight-sphere.tsx)
+   Scoped under .sis. A small glass sphere floating under the composer that
+   carries the session evidence: hover previews the "Points you've
+   demonstrated" / "Current misconception" titles, click opens the full
+   panel. Same glass language as .sts; reuses the sts-float keyframes. */
+
+.sis .sis-float { animation: sts-float 5s ease-in-out infinite; }
+
+.sis .sis-btn { transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.sis .sis-btn:hover { transform: scale(1.06); }
+.sis .sis-btn:active {
+  transform: scale(0.94);
+  transition-duration: 0.1s;
+}
+
+.sis .sis-shell {
+  border: 1px solid color-mix(in oklab, var(--foreground) 14%, transparent);
+  background:
+    radial-gradient(circle at 32% 26%, color-mix(in oklab, white 90%, transparent) 0%, color-mix(in oklab, white 28%, transparent) 16%, transparent 45%),
+    radial-gradient(circle at 68% 82%, color-mix(in oklab, var(--foreground) 10%, transparent) 0%, transparent 55%),
+    color-mix(in oklab, var(--muted) 40%, transparent);
+  box-shadow:
+    inset 0 -10px 18px -8px color-mix(in oklab, var(--foreground) 26%, transparent),
+    inset 0 8px 14px -7px color-mix(in oklab, white 75%, transparent),
+    0 10px 24px -12px color-mix(in oklab, var(--foreground) 50%, transparent);
+  transition: box-shadow 0.35s ease, border-color 0.3s ease;
+}
+
+/* Hover, keyboard focus and the open panel all light the glass with the
+   focus-ring colour — informational, not the start sphere's green "go". */
+.sis .sis-btn:hover .sis-shell,
+.sis .sis-btn:focus-visible .sis-shell,
+.sis[data-open] .sis-shell {
+  border-color: color-mix(in oklab, var(--ring) 55%, transparent);
+  box-shadow:
+    inset 0 -10px 18px -8px color-mix(in oklab, var(--ring) 30%, transparent),
+    inset 0 8px 14px -7px color-mix(in oklab, white 75%, transparent),
+    0 0 0 4px color-mix(in oklab, var(--ring) 22%, transparent),
+    0 0 34px 6px color-mix(in oklab, var(--ring) 35%, transparent),
+    0 10px 24px -12px color-mix(in oklab, var(--foreground) 45%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sis .sis-float { animation: none !important; }
+  .sis .sis-btn { transition: none; }
+  .sis .sis-btn:hover,
+  .sis .sis-btn:active { transform: none; }
+}
+
+/* ---------------------------------------------------------------------------
+   Student picker grid (used on the home page around StudentVideoPickerAvatar)
+   Scoped under .spick. Three behaviours, all hover-driven:
+   - each student drifts gently in the air (out of phase per card) and holds
+     still while its own card is hovered or focused;
+   - a card's description is hidden until that card is hovered/focused
+     (always visible on touch devices, which have no hover);
+   - while one card is hovered, the other cards blur and recede. */
+
+@keyframes spick-drift {
+  0%, 100% { transform: translate(0, 0) rotate(0deg); }
+  25% { transform: translate(2px, -5px) rotate(0.6deg); }
+  50% { transform: translate(0, -9px) rotate(0deg); }
+  75% { transform: translate(-2px, -4px) rotate(-0.6deg); }
+}
+
+.spick .spick-float { animation: spick-drift 5s ease-in-out infinite; }
+/* Out-of-phase timing so the three students never bob in unison. */
+.spick .spick-card:nth-child(2) .spick-float {
+  animation-duration: 5.8s;
+  animation-delay: -2.1s;
+}
+.spick .spick-card:nth-child(3) .spick-float {
+  animation-duration: 4.4s;
+  animation-delay: -3.2s;
+}
+/* Hold still under the pointer (or keyboard focus) so the student is easy
+   to look at and click. Pausing (not removing) avoids a snap back to rest. */
+.spick .spick-card:hover .spick-float,
+.spick .spick-card:focus-within .spick-float {
+  animation-play-state: paused;
+}
+
+.spick .spick-desc {
+  opacity: 0;
+  transition: opacity 0.25s ease;
+}
+.spick .spick-card:hover .spick-desc,
+.spick .spick-card:focus-within .spick-desc { opacity: 1; }
+
+/* Hovering one student blurs the others. Keyed on :has(...:hover) rather
+   than .spick:hover so pointing at the gaps between cards blurs nothing. */
+.spick .spick-card {
+  transition: filter 0.3s ease, opacity 0.3s ease;
+}
+.spick:has(.spick-card:hover) .spick-card:not(:hover) {
+  filter: blur(4px);
+  opacity: 0.55;
+}
+
+@media (hover: none) {
+  /* Touch: no hover to reveal with, so descriptions are simply visible. */
+  .spick .spick-desc { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spick .spick-float { animation: none !important; }
+  .spick .spick-card { transition: none; }
+  /* No blur-the-rest motion effect; descriptions still reveal (opacity
+     only, no movement). */
+  .spick:has(.spick-card:hover) .spick-card:not(:hover) {
+    filter: none;
+    opacity: 1;
   }
 }

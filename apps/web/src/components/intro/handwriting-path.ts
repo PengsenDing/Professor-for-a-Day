@@ -76,6 +76,34 @@ const parsePoints = (d: string, dx: number): Point[] => {
 };
 
 /**
+ * Relax a polyline with a (¼, ½, ¼) neighbor average, endpoints pinned.
+ * The centerlines come from a skeleton trace and carry ~1-unit sampling
+ * jitter; drawn as a thick tube that jitter reads as a wavering hand.
+ * Two passes move points only a few font units — invisible to the
+ * letterform, but the tube edge turns clean.
+ */
+const relaxPoints = (points: Point[], passes = 2): Point[] => {
+  let current = points;
+  for (let pass = 0; pass < passes; pass++) {
+    if (current.length < 3) {
+      return current;
+    }
+    current = current.map((p, i) => {
+      if (i === 0 || i === current.length - 1) {
+        return p;
+      }
+      const prev = current[i - 1];
+      const next = current[i + 1];
+      return {
+        x: p.x / 2 + (prev.x + next.x) / 4,
+        y: p.y / 2 + (prev.y + next.y) / 4,
+      };
+    });
+  }
+  return current;
+};
+
+/**
  * Resample a polyline as a smooth cubic-Bézier spline (Catmull-Rom).
  * The source glyphs are uniformly sampled centerline polylines; drawn
  * thick, their corners would read as "rough handwriting". Routing one
@@ -127,7 +155,7 @@ const layoutStrokes = (): { strokes: LaidOutStroke[]; width: number } => {
       continue;
     }
     for (const local of splitSubpaths(glyph.d)) {
-      const d = smoothPath(parsePoints(local, x));
+      const d = smoothPath(relaxPoints(parsePoints(local, x)));
       const length = getLength(d);
       strokes.push({
         d,
@@ -185,7 +213,10 @@ const buildTimeline = (): { segments: Segment[]; writeEndFrame: number } => {
   };
 
   const draw = (d: string, length: number, end: Point) => {
-    const frames = Math.max(2, Math.round(length / WRITING.drawUnitsPerFrame));
+    const frames = Math.max(
+      WRITING.minDrawFrames,
+      Math.round(length / WRITING.drawUnitsPerFrame),
+    );
     segments.push({
       kind: "draw",
       d,
@@ -225,7 +256,7 @@ export const WRITE_END_FRAME = timeline.writeEndFrame;
 /** Frame at which the idle glow-breathing loop starts. */
 export const LOOP_START_FRAME = WRITE_END_FRAME + WRITING.holdFrames;
 /** Frame at which the START button may appear. */
-export const BUTTON_REVEAL_FRAME = WRITE_END_FRAME + 6;
+export const BUTTON_REVEAL_FRAME = WRITE_END_FRAME + 12;
 
 export type WritingState = {
   /** Revealed length per draw stroke, aligned with DRAW_SEGMENTS. */

@@ -53,8 +53,8 @@ export const HandwrittenTitle: React.FC<HandwrittenTitleProps> = ({
   // Fade the tip in on entry and out right after the flourish completes.
   const tipOpacity =
     frame >= WRITE_END_FRAME
-      ? Math.max(0, 1 - (frame - WRITE_END_FRAME) / 8)
-      : Math.min(1, frame / 6);
+      ? Math.max(0, 1 - (frame - WRITE_END_FRAME) / 16)
+      : Math.min(1, frame / 12);
 
   const gradient = COLORS.gradientStops;
 

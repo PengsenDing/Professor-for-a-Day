@@ -12,6 +12,7 @@ import {
 import { Billboard, Line, OrbitControls, useCursor } from "@react-three/drei";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import type { Concept, Curriculum } from "@/lib/types";
+import { useIsDark } from "@/lib/use-is-dark";
 import { cn } from "@/lib/utils";
 
 /** Sphere radius in world units — everything else is sized relative to it. */
@@ -513,28 +514,65 @@ function FitCamera({ points, radius }: { points: Vec3[]; radius: number }) {
   return null;
 }
 
-/** Soft radial halo texture used as a shadow-like glow behind each sphere. */
-function useHaloTexture() {
-  return useMemo(() => {
+/**
+ * The scene's "ink" — everything drawn against the page background: node
+ * halos, the selection ring, in-ball titles, and edges. The canvas itself is
+ * transparent, so these must flip with the page theme (dark ink on the light
+ * page, light ink on the dark one) or they vanish.
+ */
+const INK = {
+  light: {
+    halo: "20, 20, 20",
+    ring: "23, 23, 23",
+    title: "#1c1917",
+    edgeActive: "#404040",
+    edgeIdle: "#8f8f8f",
+  },
+  dark: {
+    halo: "226, 232, 240",
+    ring: "235, 235, 235",
+    title: "#f5f5f4",
+    edgeActive: "#d4d4d4",
+    edgeIdle: "#8f8f8f",
+  },
+} as const;
+
+const inkFor = (dark: boolean) => (dark ? INK.dark : INK.light);
+
+/** Frees the previous texture's GPU memory when a redraw replaces it. */
+function useDisposeTexture(texture: THREE.CanvasTexture) {
+  useEffect(() => () => texture.dispose(), [texture]);
+}
+
+/**
+ * Soft radial halo texture behind each sphere: reads as an ambient shadow
+ * on the light page and as a soft backlight on the dark one.
+ */
+function useHaloTexture(dark: boolean) {
+  const texture = useMemo(() => {
+    const ink = inkFor(dark).halo;
     const canvas = document.createElement("canvas");
     canvas.width = canvas.height = 128;
     const ctx = canvas.getContext("2d")!;
     const g = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
-    g.addColorStop(0, "rgba(20, 20, 20, 0.55)");
-    g.addColorStop(0.55, "rgba(20, 20, 20, 0.18)");
-    g.addColorStop(1, "rgba(20, 20, 20, 0)");
+    g.addColorStop(0, `rgba(${ink}, 0.55)`);
+    g.addColorStop(0.55, `rgba(${ink}, 0.18)`);
+    g.addColorStop(1, `rgba(${ink}, 0)`);
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, 128, 128);
     return new THREE.CanvasTexture(canvas);
-  }, []);
+  }, [dark]);
+  useDisposeTexture(texture);
+  return texture;
 }
 
 /**
  * Selection ring texture: a thin crisp circle with a faint soft halo, far
  * lighter than solid ring geometry. Drawn once, shared by every node.
  */
-function useRingTexture() {
-  return useMemo(() => {
+function useRingTexture(dark: boolean) {
+  const texture = useMemo(() => {
+    const ink = inkFor(dark).ring;
     const size = 256;
     const canvas = document.createElement("canvas");
     canvas.width = canvas.height = size;
@@ -543,8 +581,8 @@ function useRingTexture() {
       ctx.beginPath();
       ctx.arc(size / 2, size / 2, 100, 0, Math.PI * 2);
       ctx.lineWidth = width;
-      ctx.strokeStyle = `rgba(23, 23, 23, ${alpha})`;
-      ctx.shadowColor = `rgba(23, 23, 23, ${alpha})`;
+      ctx.strokeStyle = `rgba(${ink}, ${alpha})`;
+      ctx.shadowColor = `rgba(${ink}, ${alpha})`;
       ctx.shadowBlur = blur;
       ctx.stroke();
     };
@@ -554,7 +592,9 @@ function useRingTexture() {
     texture.colorSpace = THREE.SRGBColorSpace;
     texture.anisotropy = 4;
     return texture;
-  }, []);
+  }, [dark]);
+  useDisposeTexture(texture);
+  return texture;
 }
 
 /**
@@ -587,8 +627,8 @@ const SCALE_TARGET = new THREE.Vector3();
  * per title — unlike SDF text this needs no worker or extra WebGL context,
  * and the billboarded plane it maps onto scales with the ball on zoom.
  */
-function useTitleTexture(title: string): THREE.CanvasTexture {
-  return useMemo(() => {
+function useTitleTexture(title: string, dark: boolean): THREE.CanvasTexture {
+  const texture = useMemo(() => {
     const size = TITLE_TEXTURE_SIZE;
     const canvas = document.createElement("canvas");
     canvas.width = canvas.height = size;
@@ -638,7 +678,7 @@ function useTitleTexture(title: string): THREE.CanvasTexture {
     ctx.font = fontFor(fontSize);
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillStyle = "#1c1917";
+    ctx.fillStyle = inkFor(dark).title;
     const lineHeight = fontSize * 1.16;
     const firstY = size / 2 - ((lines.length - 1) / 2) * lineHeight;
     lines.forEach((line, i) => {
@@ -649,7 +689,9 @@ function useTitleTexture(title: string): THREE.CanvasTexture {
     texture.colorSpace = THREE.SRGBColorSpace;
     texture.anisotropy = 4;
     return texture;
-  }, [title]);
+  }, [title, dark]);
+  useDisposeTexture(texture);
+  return texture;
 }
 
 function ConceptNode({
@@ -658,6 +700,7 @@ function ConceptNode({
   best,
   selected,
   dragging,
+  dark,
   haloTexture,
   glowTexture,
   ringTexture,
@@ -672,6 +715,7 @@ function ConceptNode({
   best: number;
   selected: boolean;
   dragging: boolean;
+  dark: boolean;
   haloTexture: THREE.Texture;
   glowTexture: THREE.Texture;
   ringTexture: THREE.Texture;
@@ -682,7 +726,7 @@ function ConceptNode({
   onDragEnd: () => void;
 }) {
   const accomplished = best >= 100;
-  const titleTexture = useTitleTexture(concept.title);
+  const titleTexture = useTitleTexture(concept.title, dark);
 
   // Water level (local y) holding `best`% of the sphere's volume.
   const water = useMemo(() => {
@@ -957,11 +1001,14 @@ function Edges3D({
   edges,
   positions,
   activeId,
+  dark,
 }: {
   edges: Curriculum["edges"];
   positions: Record<string, Vec3>;
   activeId: string | null;
+  dark: boolean;
 }) {
+  const ink = inkFor(dark);
   const items = useMemo(() => {
     return edges.flatMap((e) => {
       const a = positions[e.from];
@@ -988,7 +1035,7 @@ function Edges3D({
           <Line
             key={it.id}
             points={[it.start, it.end]}
-            color={active ? "#404040" : "#8f8f8f"}
+            color={active ? ink.edgeActive : ink.edgeIdle}
             transparent
             opacity={active ? 0.9 : 0.45}
             lineWidth={active ? 2 : 1.4}
@@ -1060,9 +1107,10 @@ export function KnowledgeGraph3D({
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const controlsRef = useRef<OrbitControlsImpl | null>(null);
 
-  const haloTexture = useHaloTexture();
+  const dark = useIsDark();
+  const haloTexture = useHaloTexture(dark);
   const glowTexture = useGlowTexture();
-  const ringTexture = useRingTexture();
+  const ringTexture = useRingTexture(dark);
 
   // Undirected adjacency, used to let connected spheres follow a drag.
   const adjacency = useMemo(() => {
@@ -1268,7 +1316,9 @@ export function KnowledgeGraph3D({
             const vb = bHeld ? dragVelRef.current : (vel[ids[j]] ?? VEC3_ZERO);
             // Approach speed along the a→b normal; separate only if closing.
             const s =
-              (va[0] - vb[0]) * ux + (va[1] - vb[1]) * uy + (va[2] - vb[2]) * uz;
+              (va[0] - vb[0]) * ux +
+              (va[1] - vb[1]) * uy +
+              (va[2] - vb[2]) * uz;
             if (s > 0) {
               const bounce = (1 + BUMP_RESTITUTION) * s;
               if (aHeld) {
@@ -1321,6 +1371,7 @@ export function KnowledgeGraph3D({
               edges={curriculum.edges}
               positions={positions}
               activeId={draggingId ?? hoveredId}
+              dark={dark}
             />
             {ordered.map((concept) => (
               <ConceptNode
@@ -1330,6 +1381,7 @@ export function KnowledgeGraph3D({
                 best={mastery[concept.id] ?? 0}
                 selected={selectedId === concept.id}
                 dragging={draggingId === concept.id}
+                dark={dark}
                 haloTexture={haloTexture}
                 glowTexture={glowTexture}
                 ringTexture={ringTexture}
@@ -1344,8 +1396,8 @@ export function KnowledgeGraph3D({
 
           {/* Top of the viewport: the bottom is taken by the step nav pill
               and the "Pick a concept" copy. */}
-          <div className="pointer-events-none absolute top-4 left-1/2 -translate-x-1/2 rounded-full border bg-background/85 px-3 py-1 text-[11px] whitespace-nowrap text-muted-foreground shadow-sm backdrop-blur">
-            Drag spheres to arrange · drag the background to rotate · scroll to
+          <div className="pointer-events-none absolute top-4 left-1/2 -translate-x-1/2 px-3 py-1 text-[11px] whitespace-nowrap text-muted-foreground">
+            Drag spheres to arrange · Drag the background to rotate · Scroll to
             zoom
           </div>
         </div>,
